@@ -72,7 +72,7 @@ def help_text() -> str:
         f"<code>/deposit amount</code> — wallet → bank\n"
         f"<code>/withdraw amount</code> — bank → wallet (tax applies)\n"
         f"<code>/bank</code> — bank info & interest\n"
-        f"<code>/transactions</code> — recent transactions\n\n"
+        f"<code>/transactions</code> — last 10 transfers (sent & received)\n\n"
         f"<b>📈 Market</b>\n"
         f"<code>/stocklist</code> — market overview\n"
         f"<code>/stock SYMBOL</code> — asset details\n"
@@ -176,11 +176,18 @@ def bank(user: dict[str, Any], settings: dict[str, Any], tax_pool: int) -> str:
 
 
 def transaction_row(tx: dict[str, Any]) -> str:
-    sign = {"PAY": "→", "GAME_LOSS": "−", "ADMIN_REMOVE": "−", "STOCK_BUY": "−",
-            "WITHDRAW": "−", "TAX": "−", "ROBBED": "−"}.get(tx.get("type", ""), "＋")
+    direction = tx.get("metadata", {}).get("direction")
+    if tx.get("type") == "PAY" and direction == "in":
+        sign, label = "←", "RECEIVED"
+    elif tx.get("type") == "PAY":
+        sign, label = "→", "SENT"
+    else:
+        sign = {"GAME_LOSS": "−", "ADMIN_REMOVE": "−", "STOCK_BUY": "−",
+                "WITHDRAW": "−", "TAX": "−", "ROBBED": "−"}.get(tx.get("type", ""), "＋")
+        label = tx.get("type", "UNKNOWN")
     amount = tx.get("amount", 0)
     return (
-        f"<code>{escape(tx.get('type', 'UNKNOWN'))}</code> {sign} "
+        f"<code>{escape(label)}</code> {sign} "
         f"<b>{format_money(amount)}</b> · <code>#{tx.get('transaction_id', '')[:10]}</code>"
     )
 
@@ -321,7 +328,8 @@ def admin_help() -> str:
         f"<code>/rsudo @user</code> — remove sudo (owner only)\n\n"
         f"<b>💰 Economy</b>\n"
         f"<code>/give @user amount</code> — give money\n"
-        f"<code>/remove @user amount</code> — take money\n\n"
+        f"<code>/remove @user amount</code> — take money\n"
+        f"<code>/getcoin amount</code> — credit yourself coins\n\n"
         f"<b>🏦 Bank</b>\n"
         f"<code>/setinterest rate</code> — interest % per 24h\n"
         f"<code>/settax rate</code> — withdrawal tax %\n"
@@ -332,6 +340,9 @@ def admin_help() -> str:
         f"<code>/betset win_prob multiplier min_bet max_bet [cooldown]</code>\n"
         f"<code>/minestrap ...</code> — mines tuning\n"
         f"<code>/robset field value</code> — rob tuning\n\n"
+        f"<b>📈 Market</b>\n"
+        f"<code>/addstock SYMBOL name price volatility</code> — list a stock\n"
+        f"<code>/rmstock SYMBOL</code> — delist a stock\n\n"
         f"<b>🎁 Rewards</b>\n"
         f"<code>/setreward daily|weekly|monthly amount</code>\n\n"
         f"<b>👥 Users</b>\n"

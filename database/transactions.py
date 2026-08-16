@@ -27,5 +27,15 @@ async def recent_by_user(user_id: int, limit: int = 10) -> list[dict[str, Any]]:
     return [doc async for doc in cursor]
 
 
+async def recent_transfers_by_user(user_id: int, limit: int = 10) -> list[dict[str, Any]]:
+    cursor = (
+        mongo.db[COLLECTION]
+        .find({"user_id": user_id, "type": "PAY"})
+        .sort("created_at", -1)
+        .limit(limit)
+    )
+    return [doc async for doc in cursor]
+
+
 async def count_for_user(user_id: int) -> int:
     return await mongo.db[COLLECTION].count_documents({"user_id": user_id})

@@ -64,6 +64,6 @@ def register(app: Client) -> None:
     @safe_handler(feature="economy")
     async def cmd_transactions(client: Client, message: Message):
         await ensure_user(client, message)
-        recent = await tx_service.get_recent(message.from_user.id, 10)
+        recent = await tx_service.get_recent_transfers(message.from_user.id, 10)
         rows = [msgs.transaction_row(tx) for tx in recent]
         await reply_html(client, message, msgs.transactions_list(rows, not rows))

@@ -110,7 +110,7 @@ def _validate_fly_settings(difficulty: str, settings: dict) -> str | None:
 
 def register(app: Client) -> None:
     # ---------------- OWNER ONLY ----------------
-    @app.on_message(filters.command("addsudo") & filters.private)
+    @app.on_message(filters.command("addsudo") & NOT_CHANNEL)
     @owner_only
     @safe_handler
     async def cmd_addsudo(client: Client, message: Message):
@@ -121,7 +121,7 @@ def register(app: Client) -> None:
         await admins_db.add_sudo(target, message.from_user.id)
         await reply_html(client, message, msgs.success(f"Added <code>{target}</code> as sudo admin."))
 
-    @app.on_message(filters.command("rsudo") & filters.private)
+    @app.on_message(filters.command("rsudo") & NOT_CHANNEL)
     @owner_only
     @safe_handler
     async def cmd_rsudo(client: Client, message: Message):
@@ -205,6 +205,31 @@ def register(app: Client) -> None:
         await reply_html(
             client, message,
             msgs.success(f"Removed {format_money(amount)} from <code>{target}</code>.\n🧾 <code>#{tx_id}</code>"),
+        )
+
+    @app.on_message(filters.command("getcoin") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler(feature="admin")
+    async def cmd_getcoin(client: Client, message: Message):
+        await ensure_user(client, message)
+        amount, err = parse_amount_or_error(message.command[1] if len(message.command) > 1 else "")
+        if err:
+            await reply_html(client, message, msgs.error(f"Usage: <code>/getcoin amount</code>. {err}"))
+            return
+        actor = message.from_user.id
+        await economy.admin_give(actor, amount, actor)
+        before = await economy.get_balance(actor)
+        tx_id = await tx_service.record(
+            user_id=actor,
+            ttype=tx_service.ADMIN_GIVE,
+            amount=amount,
+            balance_before=before["wallet"],
+            balance_after=before["wallet"] + amount,
+            metadata={"actor": actor, "self": True},
+        )
+        await reply_html(
+            client, message,
+            msgs.success(f"You received <b>{format_money(amount)}</b>.\n🧾 <code>#{tx_id}</code>"),
         )
 
     @app.on_message(filters.command("setinterest") & NOT_CHANNEL)

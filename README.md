@@ -34,7 +34,8 @@ can be added without rewriting the economy engine.
   Telegram group-admin status is separate from the bot's admin hierarchy; `/adminhelp`
   lists every admin command for owner and sudo
 - **Admin configuration** — interest/tax rates, fly/mines/bet/rob tuning, reward amounts,
-  freeze/ban, give/remove, economy stats (`/econstats`), group config (`/setchat`)
+  give/remove, `/getcoin` self-credit, add/delist stocks (`/addstock` `/rmstock`),
+  freeze/ban, economy stats (`/econstats`), group config (`/setchat`)
 - **Centralized HTML messaging** — every message is built by `utils/messages.py` and sent via
   `utils/sender.py` with Telegram HTML parse mode; dynamic content is always escaped
 - **Catbox media abstraction** — `services/media.py` for future media commands (graceful when disabled)
@@ -59,7 +60,8 @@ owner/sudo admins with `/setchat`:
 Settings: `group`, `economy`, `games`, `leaderboard`, `admin_commands` — all default to
 `on` in Phase 1.  When a feature is disabled the bot stays silent on those commands.
 Admin commands (owner/sudo only) are blocked by `admin` even in groups; the owner always
-bypasses.  `/addsudo` and `/rsudo` remain private-chat only.
+bypasses.  `/addsudo` and `/rsudo` (owner only) work in both DM and groups — in DM target
+by `@username` or numeric id, in a group reply to the user.
 
 ## Architecture
 
@@ -209,12 +211,12 @@ docker run -d --env-file .env --name unoitachi unoitachi-bot
 | --- | --- |
 | Economy | `/start` `/profile` `/bal [@user\|id]` `/pay @user\|id amount` `/leader` — reply-based `/bal` `/pay` work in every chat |
 | Rewards | `/daily` `/weekly` `/monthly` — free currency on 24h / 7d / 30d cooldowns |
-| Bank | `/deposit amount` `/withdraw amount` `/bank` `/transactions` |
+| Bank | `/deposit amount` `/withdraw amount` `/bank` `/transactions` (last 10 transfers) |
 | Market | `/stocklist` `/stock SYMBOL` `/buystock SYMBOL qty` `/sellstock SYMBOL qty` `/portfolio` |
 | Games | `/fly low\|medium\|high amount` `/mines amount` `/bet amount` |
 | Crime | `/rob @user\|id` — steal from a user's bank (reply-based; 60s cooldown, random police catch) |
-| Owner | `/addsudo @user` `/rsudo @user` (private chat only) |
-| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/setinterest rate` `/settax rate` `/banksettings` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
+| Owner | `/addsudo @user\|id` `/rsudo @user\|id` — work in DM and groups (reply-based in groups) |
+| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
 
 ## Admin system
 

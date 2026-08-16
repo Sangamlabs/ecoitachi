@@ -53,6 +53,18 @@ async def get_asset(symbol: str) -> dict[str, Any] | None:
     return await mongo.db[ASSETS].find_one({"symbol": symbol.upper(), "is_active": True})
 
 
+async def get_asset_any(symbol: str) -> dict[str, Any] | None:
+    return await mongo.db[ASSETS].find_one({"symbol": symbol.upper()})
+
+
+async def create_asset(doc: dict[str, Any]) -> None:
+    await mongo.db[ASSETS].insert_one(doc)
+
+
+async def update_asset(symbol: str, fields: dict[str, Any]) -> None:
+    await mongo.db[ASSETS].update_one({"symbol": symbol.upper()}, {"$set": fields})
+
+
 async def list_active_assets() -> list[dict[str, Any]]:
     cursor = mongo.db[ASSETS].find({"is_active": True}).sort("symbol", 1)
     return [doc async for doc in cursor]

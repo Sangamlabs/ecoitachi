@@ -11,13 +11,13 @@ GENERAL NOTES
 - Every user is auto-created on first interaction. New users receive a
   welcome grant of ₹500 (50,000 units) in their wallet (admin-configurable).
 - Most commands work in private chats, groups AND supergroups. Channels and
-  bots are ignored. The only commands restricted to private chat are
-  /addsudo and /rsudo.
+  bots are ignored.
 - Reply-based target resolution: replying to a user's message is the most
   reliable way to target them; otherwise you can pass @username or a numeric
   Telegram user id.
-- All money movements produce an audit transaction with a unique #txid, shown
-  in /transactions.
+- All money movements produce an audit transaction with a unique #txid.
+  /transactions only shows your last 10 transfer (PAY) logs; other types
+  are still recorded in the database.
 
 PERMISSIONS
 --------------------------------------------------------------------------------
@@ -95,7 +95,12 @@ BANK
     earners. Example: /withdraw 10000
 
 /transactions
-    Your 10 most recent transactions with type, amount and txid.
+    Your last 10 TRANSFER logs — money sent to you or sent by you.
+    Sent transfers show "PAY →", received transfers show "PAY ←" with the
+    txid. All other types (deposits, game wins, rewards, ...) are not shown
+    here. Example:
+        PAY SENT → ₹20.00 · #a1b2c3d4e5
+        PAY RECEIVED ← ₹5.00 · #f6e7d8c9b0
 
 MARKET (stocks)
 --------------------------------------------------------------------------------
@@ -164,14 +169,20 @@ Target resolution (for @user arguments everywhere):
     reply-to message  >  @username  >  numeric user id.
 The target user must already have started the bot.
 
-PERMISSIONS (owner only, private chat only)
+PERMISSIONS (owner only — works in DM and groups)
 --------------------------------------------------------------------------------
-/addsudo @user
+/addsudo @user | /addsudo user_id | reply to a user + /addsudo
     Make a user a sudo admin. They get access to every admin command except
-    /addsudo and /rsudo. Example: /addsudo @sangam
+    /addsudo and /rsudo.
+    In DM: target by @username or numeric user id.
+    In a group: reply to the user's message (or @username / numeric id).
+    Example:  /addsudo @sangam
+              /addsudo 123456789
+              (reply to a message) /addsudo
 
-/rsudo @user
-    Remove a sudo admin. The owner cannot be removed.
+/rsudo @user | /rsudo user_id | reply to a user + /rsudo
+    Remove a sudo admin (same target rules as /addsudo). The owner cannot be
+    removed.
 
 HELP
 --------------------------------------------------------------------------------
@@ -189,6 +200,11 @@ ECONOMY — MONEY
     Take money from a user's wallet. Uses an atomic balance guard, so it can
     never make a balance negative — fails with "Insufficient balance" if the
     user cannot cover it. Logs ADMIN_REMOVE.
+
+/getcoin amount
+    Admin cheat: instantly credit YOUR OWN wallet with money. Logs an
+    ADMIN_GIVE transaction against you.
+    Example: /getcoin 100000   (₹1,000.00)
 
 BANK
 --------------------------------------------------------------------------------
@@ -264,6 +280,23 @@ GAMES — ROB (crime tuning)
         max       : >= 0    (default ₹5,000) maximum stolen amount (min <= max)
         cooldown  : seconds (default 60)
     Example: /robset win_prob 0.60
+
+MARKET
+--------------------------------------------------------------------------------
+/addstock SYMBOL name base_price volatility
+    List a NEW asset on the market (or re-list one that was removed).
+        SYMBOL    : letters/numbers only, shown in UPPERCASE
+        name      : display name (may contain spaces, put it right after SYMBOL)
+        base_price: opening price, must be > 0
+        volatility: random-walk strength, must be between 0 and 1
+    The price starts at base_price and is ticked by the scheduler like every
+    other asset. Re-listing an inactive symbol restores it.
+    Example: /addstock ADA Cardano 45000 0.02
+
+/rmstock SYMBOL
+    Delist an asset from the market. Buying, selling and price ticks stop for
+    it immediately. Existing holdings are kept but can no longer be traded.
+    Example: /rmstock DOGE
 
 FREE REWARDS
 --------------------------------------------------------------------------------

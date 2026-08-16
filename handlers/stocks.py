@@ -1,4 +1,5 @@
-"""Stock market handlers: /stocklist, /stock, /buystock, /sellstock, /portfolio."""
+"""Stock market handlers: /stocklist, /stock, /buystock, /sellstock, /portfolio,
+plus admin commands /addstock and /rmstock."""
 
 from __future__ import annotations
 
@@ -7,8 +8,10 @@ from pyrogram.types import Message
 
 from handlers.common import ensure_user, safe_handler
 from services import stocks as stocks_service
+from services.economy import EconomyError
 from utils import messages as msgs
 from utils.money import format_money
+from utils.permissions import sudo_only
 from utils.sender import reply_html
 
 NOT_CHANNEL = ~filters.channel & ~filters.bot
@@ -90,3 +93,70 @@ def register(app: Client) -> None:
                 f"💵 Value: {format_money(r['value'])} {arrow} {abs(r['change_percent']):.2f}%"
             )
         await reply_html(client, message, msgs.portfolio(rows, pf["total_value"], pf["total_cost"]))
+
+    @app.on_message(filters.command("addstock") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler(feature="admin")
+    async def cmd_addstock(client: Client, message: Message):
+        await ensure_user(client, message)
+        args = message.command[1:]
+        if len(args) < 4:
+            await reply_html(
+                client, message,
+                msgs.error(
+                    "Usage: <code>/addstock SYMBOL name base_price volatility</code>\n"
+                    "Example: <code>/addstock ADA Cardano 45000 0.02</code>"
+                ),
+            )
+            return
+        symbol = args[0].upper()
+        if not symbol.isalnum():
+            await reply_html(client, message, msgs.error("Symbol must be letters/numbers only."))
+            return
+        try:
+            base_price = int(float(args[-2]))
+            volatility = float(args[-1])
+        except ValueError:
+            await reply_html(client, message, msgs.error("Invalid base_price or volatility."))
+            return
+        name = " ".join(args[1:-2])
+        if base_price <= 0:
+            await reply_html(client, message, msgs.error("base_price must be greater than 0."))
+            return
+        if not (0 < volatility <= 1):
+            await reply_html(client, message, msgs.error("Volatility must be between 0 and 1."))
+            return
+        try:
+            status = await stocks_service.add_asset(symbol, name, base_price, volatility)
+        except EconomyError as exc:
+            await reply_html(client, message, msgs.error(str(exc)))
+            return
+        await reply_html(
+            client, message,
+            msgs.success(
+                f"Listed <code>{symbol}</code> — {name} ({status}).\n"
+                f"Base price: {format_money(base_price)} · Volatility: {volatility}"
+            ),
+        )
+
+    @app.on_message(filters.command("rmstock") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler(feature="admin")
+    async def cmd_rmstock(client: Client, message: Message):
+        await ensure_user(client, message)
+        symbol = message.command[1].upper() if len(message.command) > 1 else None
+        if not symbol:
+            await reply_html(client, message, msgs.error("Usage: <code>/rmstock SYMBOL</code>"))
+            return
+        try:
+            asset = await stocks_service.deactivate_asset(symbol)
+        except EconomyError as exc:
+            await reply_html(client, message, msgs.error(str(exc)))
+            return
+        await reply_html(
+            client, message,
+            msgs.success(
+                f"Removed <code>{asset['symbol']}</code> ({asset.get('name', '')}) from the market.\n"
+                f"Existing holders can no longer trade it."
+            ),
+        )

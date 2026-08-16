@@ -110,7 +110,15 @@ def register(app: Client) -> None:
             amount=amount,
             balance_before=result["sender_wallet"] + amount,
             balance_after=result["sender_wallet"],
-            metadata={"receiver": target_id},
+            metadata={"receiver": target_id, "direction": "out"},
+        )
+        await tx_service.record(
+            user_id=target_id,
+            ttype=tx_service.PAY,
+            amount=amount,
+            balance_before=result["receiver_wallet"] - amount,
+            balance_after=result["receiver_wallet"],
+            metadata={"sender": message.from_user.id, "direction": "in"},
         )
         sender_doc = await users_db.get_user(message.from_user.id)
         await reply_html(client, message, msgs.payment(sender_doc, receiver_doc, amount, tx_id))

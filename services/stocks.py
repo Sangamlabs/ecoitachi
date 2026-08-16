@@ -36,6 +36,42 @@ async def get_asset(symbol: str) -> dict[str, Any]:
     return asset
 
 
+async def add_asset(symbol: str, name: str, base_price: int, volatility: float) -> str:
+    """List a new asset (or re-list an inactive one). Returns 'created'/'reactivated'."""
+    symbol = symbol.upper()
+    existing = await stocks_db.get_asset_any(symbol)
+    now = int(time.time())
+    fields = {
+        "name": name,
+        "base_price": base_price,
+        "volatility": volatility,
+        "price": base_price,
+        "open_price": base_price,
+        "high_price": base_price,
+        "low_price": base_price,
+        "change": 0,
+        "change_percent": 0.0,
+        "is_active": True,
+        "updated_at": now,
+    }
+    if existing is not None:
+        if existing.get("is_active"):
+            raise EconomyError(f"<code>{symbol}</code> is already listed on the market.")
+        await stocks_db.update_asset(symbol, fields)
+        return "reactivated"
+    await stocks_db.create_asset({"symbol": symbol, "volume": 0, "created_at": now, **fields})
+    return "created"
+
+
+async def deactivate_asset(symbol: str) -> dict[str, Any]:
+    """Remove an asset from the market. Raises if it is not listed."""
+    asset = await stocks_db.get_asset(symbol)
+    if asset is None:
+        raise EconomyError(f"<code>{symbol.upper()}</code> is not listed on the market.")
+    await stocks_db.update_asset(symbol, {"is_active": False, "updated_at": int(time.time())})
+    return asset
+
+
 async def update_market_prices() -> int:
     """Advance every asset price by one random-walk tick. Returns tick count."""
     assets = await stocks_db.get_all_assets()
