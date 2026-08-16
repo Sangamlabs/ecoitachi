@@ -216,6 +216,22 @@ async def test_tax_distribution_idempotent():
     assert await tax.distribute_monthly(now=now + 40 * 86_400) is None
 
 
+async def test_tax_manual_distribution_is_not_month_blocking():
+    await users_db.get_or_create_user(A, "user_a", "User A")
+    await economy.admin_give(A, 1_000_000, 1)
+    await bank.deposit(A, 500_000)
+    await bank.withdraw(A, 100_000)
+    now = int(time.time())
+    manual = await tax.distribute_manual(now=now)
+    assert manual is not None and manual["manual"] is True
+    assert manual["distributed"] > 0
+    assert await tax.get_pool_size() < manual["pool"]
+    # manual run must NOT block the automatic month-end distribution
+    monthly = await tax.distribute_monthly(now=now + 40 * 86_400)
+    assert monthly is not None
+    assert monthly["manual"] is False
+
+
 async def test_group_config_defaults_and_overrides():
     chat_id = -100_111
     cfg = await group_config.get_group_config(chat_id)

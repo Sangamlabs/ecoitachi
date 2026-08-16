@@ -73,6 +73,11 @@ def help_text() -> str:
         f"<code>/withdraw amount</code> — bank → wallet (tax applies)\n"
         f"<code>/bank</code> — bank info & interest\n"
         f"<code>/transactions</code> — last 10 transfers (sent & received)\n\n"
+        f"<b>💰 Daily Income</b>\n"
+        f"<code>/interestbank</code> — claim daily bank income\n"
+        f"<code>/interestasset</code> — claim daily asset income\n"
+        f"<code>/stockinterest</code> — claim daily stock income\n"
+        f"<i>Income builds up every 24h; claim any time to collect all of it.</i>\n\n"
         f"<b>📈 Stock Market</b>\n"
         f"<code>/stocklist</code> — market overview\n"
         f"<code>/stock SYMBOL</code> — asset details\n"
@@ -188,6 +193,62 @@ def bank(user: dict[str, Any], settings: dict[str, Any], tax_pool: int) -> str:
         f"🏛️ Tax Pool: {format_money(tax_pool)}"
         f"</blockquote>\n"
         f"<i>Use <code>/deposit</code> and <code>/withdraw</code> to move money.</i>"
+    )
+
+
+def income_claim(source: str, result: dict[str, Any]) -> str:
+    """Reply for /interestbank, /interestasset and /stockinterest."""
+    emoji = {
+        "bank": "🏦",
+        "asset": "🏠",
+        "stock": "📈",
+    }.get(source, "💰")
+    labels = {
+        "bank": "BANK INTEREST",
+        "asset": "ASSET INCOME",
+        "stock": "STOCK INTEREST",
+    }
+    label = labels.get(source, source.upper())
+    amount = int(result.get("amount", 0))
+    value = int(result.get("value", 0))
+    rate = float(result.get("rate", 0.0))
+    days = int(result.get("days", 0))
+
+    if result.get("already_claimed"):
+        return f"<b>{emoji} {label}</b>\n⚠️ You already claimed just now — try again in 24h."
+
+    if result.get("started"):
+        return (
+            f"<b>{emoji} {label}</b>\n"
+            f"<blockquote>"
+            f"📈 Income tracking started.\n"
+            f"💰 Base: {format_money(value)}\n"
+            f"📊 Rate: <b>{rate}%</b> per 24h\n"
+            f"⏳ Check back in 24h to claim."
+            f"</blockquote>"
+        )
+
+    if amount <= 0:
+        wait = int(result.get("next_in", 86_400))
+        hours = max(1, wait // 3600)
+        return (
+            f"<b>{emoji} {label}</b>\n"
+            f"<blockquote>"
+            f"💰 Base: {format_money(value)}\n"
+            f"📊 Rate: <b>{rate}%</b> per 24h\n"
+            f"⏳ Nothing to claim yet — next income in ~{hours}h."
+            f"</blockquote>"
+        )
+
+    return (
+        f"<b>{emoji} {label}</b>\n"
+        f"<blockquote>"
+        f"💵 Claimed: <b>{format_money(amount)}</b>\n"
+        f"📅 Unclaimed days: {days}\n"
+        f"💰 Base: {format_money(value)}\n"
+        f"📊 Rate: <b>{rate}%</b> per 24h"
+        f"</blockquote>\n"
+        f"<i>Paid to your wallet. Next income in 24h.</i>"
     )
 
 
@@ -358,7 +419,10 @@ def admin_help() -> str:
         f"<b>🏦 Bank</b>\n"
         f"<code>/setinterest rate</code> — interest % per 24h\n"
         f"<code>/settax rate</code> — withdrawal tax %\n"
-        f"<code>/banksettings</code> — view bank settings\n\n"
+        f"<code>/banksettings</code> — view bank settings\n"
+        f"<code>/dtax</code> — manually distribute the tax pool now\n\n"
+        f"<b>💰 Daily Income</b>\n"
+        f"<code>/setincome bank|asset|stock rate</code> — daily income % per 24h\n\n"
         f"<b>🎮 Games</b>\n"
         f"<code>/flyset low|medium|high field value</code>\n"
         f"<code>/flytrap difficulty 8 values</code>\n"
@@ -406,6 +470,23 @@ def admin_stats(stats: dict[str, Any]) -> str:
         f"🧾 Transactions: {stats['transactions']}\n"
         f"📈 Active Stocks: {stats['stocks']}"
         f"</blockquote>"
+    )
+
+
+def tax_distribution(result: dict[str, Any]) -> str:
+    """Report for a manual /dtax (or monthly) tax pool distribution."""
+    rows = [
+        f"<code>#{r['rank']}</code> · User <code>{r['user_id']}</code> — <b>{format_money(r['amount'])}</b>"
+        for r in result.get("results", [])
+    ]
+    return (
+        f"<b>🏛️ TAX DISTRIBUTION</b>\n"
+        f"<blockquote>"
+        f"💰 Pool: {format_money(result['pool'])}\n"
+        f"💸 Distributed: <b>{format_money(result['distributed'])}</b>\n"
+        f"👥 Recipients: {len(result.get('results', []))}"
+        f"</blockquote>\n"
+        f"{chr(10).join(rows)}"
     )
 
 

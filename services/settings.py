@@ -41,6 +41,11 @@ DEFAULTS: dict[str, Any] = {
         "sell_price_multiplier": 1.0,
         "price_history_retention": 500,
     },
+    "income": {
+        "bank_rate_percent": 2.0,
+        "asset_rate_percent": 1.0,
+        "stock_rate_percent": 1.0,
+    },
 }
 
 
@@ -126,6 +131,22 @@ async def update_asset_market_config(**changes: Any) -> dict[str, Any]:
     current.update({k: v for k, v in changes.items() if k in DEFAULTS["asset_market"]})
     await mongo.db[COLLECTION].update_one(
         {"key": "global"}, {"$set": {"asset_market": current}}, upsert=True
+    )
+    return current
+
+
+async def get_income_config() -> dict[str, Any]:
+    """Return the centralized daily-income (claim) configuration."""
+    settings = await get_settings()
+    return dict(settings.get("income", DEFAULTS["income"]))
+
+
+async def update_income_config(**changes: Any) -> dict[str, Any]:
+    """Overwrite one or more daily-income rates (values in percent per 24h)."""
+    current = await get_income_config()
+    current.update({k: v for k, v in changes.items() if k in DEFAULTS["income"]})
+    await mongo.db[COLLECTION].update_one(
+        {"key": "global"}, {"$set": {"income": current}}, upsert=True
     )
     return current
 

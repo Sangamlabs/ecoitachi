@@ -79,6 +79,25 @@ FREE REWARDS
     Amounts are set by admins via /setreward. While on cooldown you are told
     how many seconds remain.
 
+DAILY INCOME
+--------------------------------------------------------------------------------
+/interestbank    Claim daily bank income (extra, on top of the automatic
+                 bank interest). Income builds up every 24h on your current
+                 bank balance.
+/interestasset   Claim daily asset income — every 24h on your current asset
+                 portfolio value.
+/stockinterest   Claim daily stock income — every 24h on your current stock
+                 portfolio value.
+
+    Income is never lost: if you do not claim, it keeps stacking day after
+    day. Claiming pays out EVERY unclaimed day at once and then starts a
+    fresh 24h window. Each source has its own clock, so you can claim all
+    three independently. Rates are configured by admins via /setincome.
+    Examples:
+        /interestbank   -> claims N days of bank income in one go
+        /interestasset  -> claims N days of asset income in one go
+        /stockinterest  -> claims N days of stock income in one go
+
 BANK
 --------------------------------------------------------------------------------
 /bank
@@ -294,6 +313,20 @@ BANK
 
 /banksettings
     Show current interest rate, withdrawal tax and tax pool size.
+
+/dtax
+    Manually distribute the CURRENT tax pool to the monthly Top-10 earners
+    using the configured rank percentages. Unlike the automatic month-end
+    job, a manual run does not mark the month as distributed, so the monthly
+    auto-distribution still runs. Every manual run is audited in the
+    tax_distributions collection under its own key.
+    Example: /dtax
+
+/setincome bank|asset|stock rate
+    Daily income percentage per 24 hours for a claim source. Valid 0-100.
+    Defaults: bank 2%, asset 1%, stock 1%. The income is claimed by users
+    via /interestbank, /interestasset and /stockinterest.
+    Example: /setincome asset 1.5
 
 GAMES — FLY
 --------------------------------------------------------------------------------

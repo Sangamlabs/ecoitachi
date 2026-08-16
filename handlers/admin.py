@@ -272,6 +272,56 @@ def register(app: Client) -> None:
         await bank_service.set_tax_rate(rate, message.from_user.id)
         await reply_html(client, message, msgs.success(f"Withdrawal tax set to <b>{rate}%</b>."))
 
+    @app.on_message(filters.command("setincome") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler
+    async def cmd_setincome(client: Client, message: Message):
+        await ensure_user(client, message)
+        args = message.command[1:]
+        if len(args) != 2 or args[0].lower() not in ("bank", "asset", "stock"):
+            await reply_html(
+                client, message,
+                msgs.error("Usage: <code>/setincome bank|asset|stock rate</code> (percent per 24h)."),
+            )
+            return
+        try:
+            rate = float(args[1])
+        except ValueError:
+            await reply_html(client, message, msgs.error("Invalid rate."))
+            return
+        if not is_safe_percent(rate):
+            await reply_html(client, message, msgs.error("Rate must be between 0 and 100."))
+            return
+        field = {
+            "bank": "bank_rate_percent",
+            "asset": "asset_rate_percent",
+            "stock": "stock_rate_percent",
+        }[args[0].lower()]
+        await settings_service.update_income_config(**{field: rate})
+        await reply_html(
+            client, message,
+            msgs.success(
+                f"Daily income rate for <code>{args[0].lower()}</code> set to <b>{rate}%</b> per 24h."
+            ),
+        )
+
+    @app.on_message(filters.command("dtax") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler
+    async def cmd_dtax(client: Client, message: Message):
+        await ensure_user(client, message)
+        result = await tax_service.distribute_manual()
+        if result is None:
+            await reply_html(client, message, msgs.error("Tax distribution could not run (check distribution settings)."))
+            return
+        if result["distributed"] <= 0:
+            await reply_html(
+                client, message,
+                msgs.warning(f"No tax to distribute. Pool: {format_money(result['pool'])}"),
+            )
+            return
+        await reply_html(client, message, msgs.tax_distribution(result))
+
     @app.on_message(filters.command("banksettings") & NOT_CHANNEL)
     @sudo_only
     @safe_handler

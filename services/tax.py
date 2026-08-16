@@ -54,15 +54,38 @@ async def distribute_monthly(now: int | None = None) -> dict[str, Any] | None:
     if await already_distributed(month):
         logger.info("tax distribution for %s already done; skipping", month)
         return None
+    return await _distribute(now, month, manual=False)
 
+
+async def distribute_manual(now: int | None = None) -> dict[str, Any] | None:
+    """Manually distribute the current tax pool to the monthly Top-10 earners.
+
+    Unlike :func:`distribute_monthly`, a manual run is not blocked by the
+    monthly idempotency guard and does not mark the month as distributed, so
+    the automatic month-end distribution still runs.  Every manual run is
+    audited under its own unique key.
+    """
+    now = int(time.time()) if now is None else int(now)
+    label = f"manual-{now}"
+    return await _distribute(now, label, manual=True)
+
+
+async def _distribute(now: int, label: str, manual: bool) -> dict[str, Any] | None:
+    """Share the pool across the monthly Top-10 earners. Shared by both the
+    automatic month-end job and the manual /dtax command."""
     config = await settings_service.get_tax_distribution()
     if not config.get("enabled"):
+        await mongo.db[DIST_COLLECTION].insert_one(
+            {"month": label, "pool": 0, "distributed": False, "manual": manual,
+             "reason": "disabled", "at": now}
+        )
         return None
     percentages = config.get("percentages", [])
     pool = await get_pool_size()
     if pool <= 0 or not percentages:
         await mongo.db[DIST_COLLECTION].insert_one(
-            {"month": month, "pool": 0, "distributed": False, "reason": "empty_pool", "at": now}
+            {"month": label, "pool": 0, "distributed": False, "manual": manual,
+             "reason": "empty_pool", "at": now}
         )
         return None
 
@@ -91,7 +114,7 @@ async def distribute_monthly(now: int | None = None) -> dict[str, Any] | None:
             amount=share,
             balance_before=user_doc.get("wallet", 0),
             balance_after=user_doc.get("wallet", 0) + share,
-            metadata={"rank": idx + 1, "month": month},
+            metadata={"rank": idx + 1, "month": label, "manual": manual},
         )
         results.append({"rank": idx + 1, "user_id": user_doc["user_id"], "amount": share})
 
@@ -101,18 +124,20 @@ async def distribute_monthly(now: int | None = None) -> dict[str, Any] | None:
     )
     await mongo.db[DIST_COLLECTION].insert_one(
         {
-            "month": month,
+            "month": label,
             "pool": pool,
             "distributed": distributed,
+            "manual": manual,
             "results": results,
             "at": now,
         }
     )
     logger.info(
-        "monthly tax distribution for %s: pool=%s distributed=%s recipients=%s",
-        month,
+        "tax distribution %s: pool=%s distributed=%s recipients=%s manual=%s",
+        label,
         pool,
         distributed,
         len(results),
+        manual,
     )
-    return {"month": month, "pool": pool, "distributed": distributed, "results": results}
+    return {"month": label, "pool": pool, "distributed": distributed, "results": results, "manual": manual}

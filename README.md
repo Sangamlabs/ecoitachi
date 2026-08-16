@@ -19,6 +19,10 @@ can be added without rewriting the economy engine.
 - **Wallet & payments** — `/bal`, `/pay`, transaction engine with unique IDs
 - **Leaderboard** — net-worth ranking (wallet + bank + live stock value), modular categories
 - **Full bank system** — `/deposit`, `/withdraw`, configurable interest (24h) and withdrawal tax
+- **Daily income claims** — `/interestbank`, `/interestasset`, `/stockinterest` pay daily income on
+  bank / asset / stock balances. Income accrues every 24h and is never lost: skipping a day stacks
+  it up, and claiming pays out every unclaimed day at once. Rates are admin-configurable via
+  `/setincome bank|asset|stock rate`
 - **Tax pool & monthly distribution** — collected taxes are pooled and distributed monthly to the
   Top-10 earners using admin-configurable rank percentages (idempotent)
 - **Stock/crypto market** — `/stocklist`, `/stock`, `/buystock`, `/sellstock`, `/portfolio`
@@ -223,6 +227,7 @@ docker run -d --env-file .env --name unoitachi unoitachi-bot
 | --- | --- |
 | Economy | `/start` `/profile` `/bal [@user\|id]` `/pay @user\|id amount` `/leader` — reply-based `/bal` `/pay` work in every chat |
 | Rewards | `/daily` `/weekly` `/monthly` — free currency on 24h / 7d / 30d cooldowns |
+| Daily Income | `/interestbank` `/interestasset` `/stockinterest` — claim daily income (unclaimed days stack) |
 | Bank | `/deposit amount` `/withdraw amount` `/bank` `/transactions` (last 10 transfers) |
 | Market | `/stocklist` `/stock SYMBOL` `/buystock SYMBOL qty` `/sellstock SYMBOL qty` `/portfolio` |
 | Assets | `/assets` `/asset SYMBOL` `/assetsinfo [SYMBOL]` `/buyasset SYMBOL qty` `/sellasset SYMBOL qty` `/myassets` `/assetstats` |
@@ -230,7 +235,7 @@ docker run -d --env-file .env --name unoitachi unoitachi-bot
 | Games | `/fly low\|medium\|high amount` `/mines amount` `/bet amount` |
 | Crime | `/rob @user\|id` — steal from a user's bank (reply-based; 60s cooldown, random police catch) |
 | Owner | `/addsudo @user\|id` `/rsudo @user\|id` — work in DM and groups (reply-based in groups) |
-| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/addasset SYMBOL name CATEGORY price volatility` `/editasset SYMBOL field value` `/assetset SYMBOL field value` `/assetprice SYMBOL price` `/assetvolatility SYMBOL v` `/rmasset SYMBOL` `/restoreasset SYMBOL` `/assetinfo SYMBOL` `/assetlist [page]` `/assetsearch query` `/assetowners SYMBOL [page]` `/assetadminstats` `/listinginfo LISTING_ID` `/forcelisting LISTING_ID` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
+| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/dtax` `/setincome bank\|asset\|stock rate` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/addasset SYMBOL name CATEGORY price volatility` `/editasset SYMBOL field value` `/assetset SYMBOL field value` `/assetprice SYMBOL price` `/assetvolatility SYMBOL v` `/rmasset SYMBOL` `/restoreasset SYMBOL` `/assetinfo SYMBOL` `/assetlist [page]` `/assetsearch query` `/assetowners SYMBOL [page]` `/assetadminstats` `/listinginfo LISTING_ID` `/forcelisting LISTING_ID` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
 
 ## Admin system
 
