@@ -29,6 +29,13 @@ async def insert_session(doc: dict[str, Any]) -> None:
     await mongo.db[SESSIONS].insert_one(doc)
 
 
+async def bind_message(game_id: str, message_id: int) -> None:
+    """Attach the inline board's message id to a session (set after sending)."""
+    await mongo.db[SESSIONS].update_one(
+        {"game_id": game_id}, {"$set": {"message_id": message_id}}
+    )
+
+
 async def get_session(game_id: str) -> dict[str, Any] | None:
     return await mongo.db[SESSIONS].find_one({"game_id": game_id})
 

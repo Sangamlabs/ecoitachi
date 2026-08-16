@@ -16,9 +16,11 @@ from database import stocks as stocks_db
 from database.mongo import mongo
 from handlers.common import ensure_user, safe_handler
 from services import bank as bank_service, economy, settings as settings_service, tax as tax_service
+from services import group_config as group_config_service
 from services import transaction as tx_service
 from services.economy import EconomyError
 from utils import messages as msgs
+from utils.chat import chat_type
 from utils.money import format_money
 from utils.permissions import is_owner as utils_permissions_is_owner
 from utils.permissions import owner_only, sudo_only
@@ -32,6 +34,8 @@ from utils.validators import (
 )
 
 logger = logging.getLogger(__name__)
+
+NOT_CHANNEL = ~filters.channel & ~filters.bot
 
 FLY_FIELDS = {
     "min_mult": "minimum_multiplier",
@@ -135,7 +139,7 @@ def register(app: Client) -> None:
             await reply_html(client, message, msgs.warning("That user is not a sudo admin."))
 
     # ---------------- SUDO / ADMIN ----------------
-    @app.on_message(filters.command("give") & filters.private)
+    @app.on_message(filters.command("give") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_give(client: Client, message: Message):
@@ -164,7 +168,7 @@ def register(app: Client) -> None:
             msgs.success(f"Gave {format_money(amount)} to <code>{target}</code>.\n🧾 <code>#{tx_id}</code>"),
         )
 
-    @app.on_message(filters.command("remove") & filters.private)
+    @app.on_message(filters.command("remove") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_remove(client: Client, message: Message):
@@ -197,7 +201,7 @@ def register(app: Client) -> None:
             msgs.success(f"Removed {format_money(amount)} from <code>{target}</code>.\n🧾 <code>#{tx_id}</code>"),
         )
 
-    @app.on_message(filters.command("setinterest") & filters.private)
+    @app.on_message(filters.command("setinterest") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_setinterest(client: Client, message: Message):
@@ -217,7 +221,7 @@ def register(app: Client) -> None:
         await bank_service.set_interest_rate(rate, message.from_user.id)
         await reply_html(client, message, msgs.success(f"Bank interest rate set to <b>{rate}%</b> per 24h."))
 
-    @app.on_message(filters.command("settax") & filters.private)
+    @app.on_message(filters.command("settax") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_settax(client: Client, message: Message):
@@ -237,7 +241,7 @@ def register(app: Client) -> None:
         await bank_service.set_tax_rate(rate, message.from_user.id)
         await reply_html(client, message, msgs.success(f"Withdrawal tax set to <b>{rate}%</b>."))
 
-    @app.on_message(filters.command("banksettings") & filters.private)
+    @app.on_message(filters.command("banksettings") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_banksettings(client: Client, message: Message):
@@ -245,7 +249,7 @@ def register(app: Client) -> None:
         pool = await tax_service.get_pool_size()
         await reply_html(client, message, msgs.banksettings(settings, pool))
 
-    @app.on_message(filters.command("flyset") & filters.private)
+    @app.on_message(filters.command("flyset") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_flyset(client: Client, message: Message):
@@ -279,7 +283,7 @@ def register(app: Client) -> None:
             msgs.success(f"Fly <code>{difficulty}</code> <code>{field}</code> set to {parsed}."),
         )
 
-    @app.on_message(filters.command("flytrap") & filters.private)
+    @app.on_message(filters.command("flytrap") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_flytrap(client: Client, message: Message):
@@ -322,7 +326,7 @@ def register(app: Client) -> None:
         await settings_service.update_game_settings("fly", **{difficulty: fly_cfg})
         await reply_html(client, message, msgs.success(f"Fly <code>{difficulty}</code> settings updated."))
 
-    @app.on_message(filters.command("betset") & filters.private)
+    @app.on_message(filters.command("betset") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_betset(client: Client, message: Message):
@@ -361,7 +365,7 @@ def register(app: Client) -> None:
         await settings_service.update_game_settings("bet", **changes)
         await reply_html(client, message, msgs.success("Bet game settings updated."))
 
-    @app.on_message(filters.command("minestrap") & filters.private)
+    @app.on_message(filters.command("minestrap") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_minestrap(client: Client, message: Message):
@@ -431,7 +435,7 @@ def register(app: Client) -> None:
         )
         await reply_html(client, message, msgs.success("Mines settings updated."))
 
-    @app.on_message(filters.command("freeze") & filters.private)
+    @app.on_message(filters.command("freeze") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_freeze(client: Client, message: Message):
@@ -441,7 +445,7 @@ def register(app: Client) -> None:
         await users_db.set_user_flags(target, is_frozen=True)
         await reply_html(client, message, msgs.success(f"Frozen <code>{target}</code>."))
 
-    @app.on_message(filters.command("unfreeze") & filters.private)
+    @app.on_message(filters.command("unfreeze") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_unfreeze(client: Client, message: Message):
@@ -451,7 +455,7 @@ def register(app: Client) -> None:
         await users_db.set_user_flags(target, is_frozen=False)
         await reply_html(client, message, msgs.success(f"Unfrozen <code>{target}</code>."))
 
-    @app.on_message(filters.command("ban") & filters.private)
+    @app.on_message(filters.command("ban") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_ban(client: Client, message: Message):
@@ -464,7 +468,7 @@ def register(app: Client) -> None:
         await users_db.set_user_flags(target, is_banned=True)
         await reply_html(client, message, msgs.success(f"Banned <code>{target}</code>."))
 
-    @app.on_message(filters.command("unban") & filters.private)
+    @app.on_message(filters.command("unban") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_unban(client: Client, message: Message):
@@ -474,7 +478,7 @@ def register(app: Client) -> None:
         await users_db.set_user_flags(target, is_banned=False)
         await reply_html(client, message, msgs.success(f"Unbanned <code>{target}</code>."))
 
-    @app.on_message(filters.command("userinfo") & filters.private)
+    @app.on_message(filters.command("userinfo") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_userinfo(client: Client, message: Message):
@@ -488,7 +492,7 @@ def register(app: Client) -> None:
         stats = {"transactions": await count_for_user(target)}
         await reply_html(client, message, msgs.userinfo(doc, stats))
 
-    @app.on_message(filters.command("econstats") & filters.private)
+    @app.on_message(filters.command("econstats") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
     async def cmd_econstats(client: Client, message: Message):
@@ -501,3 +505,60 @@ def register(app: Client) -> None:
             "stocks": len(await stocks_db.list_active_assets()),
         }
         await reply_html(client, message, msgs.admin_stats(stats))
+
+    # ---------------- GROUP CONFIG (owner + sudo) ----------------
+    @app.on_message(filters.command("setchat") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler(feature="chat_control")
+    async def cmd_setchat(client: Client, message: Message):
+        args = message.command[1:]
+        in_group = chat_type(message.chat) in ("GROUP", "SUPERGROUP")
+
+        if in_group:
+            chat_id = message.chat.id
+            rest = args
+            usage = "Usage (group): <code>/setchat [setting] [on|off]</code>"
+        else:
+            if not args or not args[0].lstrip("-").isdigit():
+                await reply_html(
+                    client, message,
+                    msgs.error(
+                        "Usage (DM): <code>/setchat chat_id [setting] [on|off]</code>\n"
+                        "Example: <code>/setchat -1001234567890 economy off</code>"
+                    ),
+                )
+                return
+            chat_id = int(args[0])
+            rest = args[1:]
+            usage = "Usage (DM): <code>/setchat chat_id [setting] [on|off]</code>"
+
+        if not rest:
+            cfg = await group_config_service.get_group_config(chat_id)
+            await reply_html(client, message, msgs.group_config_status(chat_id, cfg))
+            return
+
+        if len(rest) < 2:
+            await reply_html(client, message, msgs.error(usage))
+            return
+
+        setting, raw_value = rest[0].lower(), rest[1].lower()
+        if setting not in group_config_service.SETTING_ALIASES:
+            await reply_html(
+                client, message,
+                msgs.error(f"Unknown setting. Valid: {', '.join(group_config_service.SETTING_ALIASES)}"),
+            )
+            return
+        if raw_value not in ("on", "off", "true", "false"):
+            await reply_html(client, message, msgs.error("Value must be <code>on</code> or <code>off</code>."))
+            return
+
+        key = group_config_service.SETTING_ALIASES[setting]
+        enabled = raw_value in ("on", "true")
+        cfg = await group_config_service.update_group_config(chat_id, **{key: enabled})
+        await reply_html(
+            client, message,
+            msgs.success(
+                f"Chat <code>{chat_id}</code>: <code>{key}</code> → {'✅ ON' if enabled else '⛔ OFF'}.\n"
+                f"{msgs.group_config_status(chat_id, cfg)}"
+            ),
+        )

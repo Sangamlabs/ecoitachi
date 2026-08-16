@@ -16,7 +16,7 @@ from typing import Any
 from utils.formatting import tg_link
 from utils.money import format_money
 
-CMD = "💰 RS ECONOMY"
+CMD = "💰 UNOITACHI"
 OWNER_EMOJI = {1: "🥇", 2: "🥈", 3: "🥉"}
 
 
@@ -50,7 +50,7 @@ def start(user: dict[str, Any]) -> str:
     name = _user_name(user)
     return (
         f"<b>💰 {CMD}</b>\n\n"
-        f"Welcome, <b>{name}</b>! You have joined the RS Economy.\n\n"
+        f"Welcome, <b>{name}</b>! You have joined the UNOITACHI economy.\n\n"
         f"<blockquote>"
         f"💵 Work the market, bank your earnings and grow your net worth.\n"
         f"Use <code>/help</code> to see everything you can do."
@@ -143,7 +143,7 @@ def payment_received(sender: dict[str, Any], amount: int) -> str:
 
 
 def leaderboard(entries: list[tuple[int, str, int]]) -> str:
-    lines = ["<b>🏆 RS LEADERBOARD</b>", ""]
+    lines = ["<b>🏆 UNOITACHI LEADERBOARD</b>", ""]
     for idx, (user_id, name, net_worth) in enumerate(entries, start=1):
         medal = OWNER_EMOJI.get(idx, "")
         prefix = f"{medal} " if medal else f"<code>{idx}</code>. "
@@ -185,7 +185,7 @@ def transactions_list(rows: list[str], empty: bool) -> str:
 
 
 def stock_list(assets: list[dict[str, Any]]) -> str:
-    lines = ["<b>📈 RS MARKET</b>", ""]
+    lines = ["<b>📈 UNOITACHI MARKET</b>", ""]
     for a in assets:
         arrow = "▲" if a.get("change_percent", 0) >= 0 else "▼"
         lines.append(
@@ -324,4 +324,22 @@ def interest_notice(amount: int) -> str:
     return (
         f"<b>🏦 INTEREST CREDITED</b>\n"
         f"Your bank deposit earned <b>{format_money(amount)}</b> in 24h interest."
+    )
+
+
+def group_config_status(chat_id: int, cfg: dict[str, Any]) -> str:
+    def mark(value: Any) -> str:
+        return "✅ ON" if value else "⛔ OFF"
+
+    return (
+        f"<b>⚙️ GROUP CONFIG</b>\n"
+        f"<blockquote>"
+        f"🆔 Chat: <code>{chat_id}</code>\n"
+        f"🤖 Bot: {mark(cfg.get('group_enabled', True))}\n"
+        f"💰 Economy: {mark(cfg.get('economy_enabled', True))}\n"
+        f"🎮 Games: {mark(cfg.get('games_enabled', True))}\n"
+        f"🏆 Leaderboard: {mark(cfg.get('leaderboard_enabled', True))}\n"
+        f"🛠 Admin Commands: {mark(cfg.get('admin_commands_enabled', True))}"
+        f"</blockquote>\n"
+        f"<i>Change with <code>/setchat setting on|off</code>.</i>"
     )

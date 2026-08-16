@@ -14,7 +14,7 @@ from database.mongo import mongo
 COLLECTION = "settings"
 
 DEFAULTS: dict[str, Any] = {
-    "currency": "₹ RS",
+    "currency": "₹ UN",
     "starting_balance": 0,
     "bank_interest_rate": 2.0,
     "bank_interest_interval_hours": 24,

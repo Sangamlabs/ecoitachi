@@ -76,7 +76,7 @@ async def add_wallet(
     earn: bool = True,
     from_transaction: str | None = None,
 ) -> dict[str, int]:
-    """Add RS to a user's wallet atomically. ``amount`` must be positive."""
+    """Add UN to a user's wallet atomically. ``amount`` must be positive."""
     if amount <= 0:
         raise MoneyError("Amount must be positive.")
     user = await _require_user(user_id)
@@ -98,7 +98,7 @@ async def remove_wallet(
     spend: bool = True,
     from_transaction: str | None = None,
 ) -> dict[str, int]:
-    """Atomically remove RS from a user's wallet.
+    """Atomically remove UN from a user's wallet.
 
     Raises :class:`InsufficientBalance` when the wallet cannot cover ``amount``.
     """
@@ -116,7 +116,7 @@ async def remove_wallet(
 
 
 async def transfer(sender_id: int, receiver_id: int, amount: int) -> dict[str, Any]:
-    """Move RS between two users atomically and durably.
+    """Move UN between two users atomically and durably.
 
     Returns metadata: ``{sender, receiver, amount}``.  Deduction uses a balance
     guard; the credit is written with retry, and a failed credit refunds the

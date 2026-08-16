@@ -1,4 +1,4 @@
-# RS Economy Bot — Phase 1
+# UNOITACHI Bot — Phase 1
 
 A production-ready, modular **Telegram Economy Bot** built with **Python + Pyrogram + MongoDB**.
 Everything runs asynchronously, all money is stored as integer sub-units, every financial
@@ -7,6 +7,13 @@ can be added without rewriting the economy engine.
 
 ## Features
 
+- **DM + Group / Supergroup support** — every command works in private chats and
+  groups; the economy account is **global per Telegram user id** (same wallet/bank/
+  stocks everywhere), while game sessions are chat-bound
+- **Reply-based commands** — `/bal` and `/pay` work by replying to any user in any chat
+  (target resolution: reply user id → explicit id → username)
+- **Centralized group config** — per-chat enable/disable of economy, games,
+  leaderboard and admin commands via `/setchat` (extensible without touching handlers)
 - **User profiles** — auto-created on first interaction (`/start`, `/profile`)
 - **Wallet & payments** — `/bal`, `/pay`, transaction engine with unique IDs
 - **Leaderboard** — net-worth ranking (wallet + bank + live stock value), modular categories
@@ -16,14 +23,37 @@ can be added without rewriting the economy engine.
 - **Stock/crypto market** — `/stocklist`, `/stock`, `/buystock`, `/sellstock`, `/portfolio`
   with a volatility-driven price simulator and price history
 - **Games** — `/fly` (configurable difficulties), `/mines` (6×6 inline board), `/bet`;
-  central game engine enforces cooldowns, bet limits, one-active-game and double-settlement protection
-- **Owner + Sudo admin system** — numeric-ID based permission service with decorators
+  central game engine enforces cooldowns, bet limits, one-active-game and double-settlement protection;
+  mines callbacks verify user + chat + message ownership
+- **Owner + Sudo admin system** — numeric-ID based permission service with decorators;
+  Telegram group-admin status is separate from the bot's admin hierarchy
 - **Admin configuration** — interest/tax rates, fly/mines/bet tuning, freeze/ban, give/remove,
-  economy stats (`/econstats`)
+  economy stats (`/econstats`), group config (`/setchat`)
 - **Centralized HTML messaging** — every message is built by `utils/messages.py` and sent via
   `utils/sender.py` with Telegram HTML parse mode; dynamic content is always escaped
 - **Catbox media abstraction** — `services/media.py` for future media commands (graceful when disabled)
 - **Audit logging** — every money movement creates a transaction record; secrets are filtered from logs
+
+## DM + Group support
+
+The bot is **DM + Group/Supergroup**: the same user account and economy data follow the
+**Telegram user id** everywhere (private chat, group, supergroup) — there is never a
+per-chat wallet.  Reply-based commands identify the target by the replied-to message's
+numeric user id.
+
+Per-chat behavior is controlled centrally in MongoDB (`group_config` collection) by
+owner/sudo admins with `/setchat`:
+
+```
+/setchat                 # show this group's config (group)
+/setchat games off       # disable games in this group (group)
+/setchat -1001234567890 economy on   # configure from DM
+```
+
+Settings: `group`, `economy`, `games`, `leaderboard`, `admin_commands` — all default to
+`on` in Phase 1.  When a feature is disabled the bot stays silent on those commands.
+Admin commands (owner/sudo only) are blocked by `admin` even in groups; the owner always
+bypasses.  `/addsudo` and `/rsudo` remain private-chat only.
 
 ## Architecture
 
@@ -36,7 +66,7 @@ Game modules (games/) → central game engine (services/game_engine.py)
 ```
 
 ```
-rs-economy-bot/
+unoitachi-bot/
 ├── bot.py                 # entry point + centralized command registration
 ├── config.py              # env-based configuration
 ├── handlers/              # thin command handlers
@@ -64,8 +94,8 @@ rs-economy-bot/
 ## Installation
 
 ```bash
-git clone <repo> rs-economy-bot
-cd rs-economy-bot
+git clone <repo> unoitachi-bot
+cd unoitachi-bot
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -122,7 +152,7 @@ Deployment files live in the repo root (`Dockerfile`, `Procfile`, `railway.json`
 ### Heroku
 
 ```bash
-heroku create rs-economy-bot
+heroku create unoitachi-bot
 heroku buildpacks:set heroku/python
 heroku config:set API_ID=... API_HASH=... BOT_TOKEN=... OWNER_ID=... \
   MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net/
@@ -140,16 +170,16 @@ Automatic setup (installs MongoDB, clones the repo, creates venv + systemd unit)
 
 ```bash
 sudo bash scripts/deploy_vps.sh
-# edit /opt/rs-economy-bot/.env  (API_ID, API_HASH, BOT_TOKEN, OWNER_ID)
-sudo systemctl restart rs-economy
-journalctl -u rs-economy -f     # watch logs
+# edit /opt/unoitachi-bot/.env  (API_ID, API_HASH, BOT_TOKEN, OWNER_ID)
+sudo systemctl restart unoitachi
+journalctl -u unoitachi -f     # watch logs
 ```
 
-Manual setup — copy `deploy/rs-economy.service` to
-`/etc/systemd/system/rs-economy.service`, fix the `User=` line, then:
+Manual setup — copy `deploy/unoitachi.service` to
+`/etc/systemd/system/unoitachi.service`, fix the `User=` line, then:
 
 ```bash
-sudo systemctl daemon-reload && sudo systemctl enable --now rs-economy
+sudo systemctl daemon-reload && sudo systemctl enable --now unoitachi
 ```
 
 ### Windows
@@ -163,20 +193,20 @@ scripts\start_windows.bat     :: launch the bot
 ### Docker (any host)
 
 ```bash
-docker build -t rs-economy-bot .
-docker run -d --env-file .env --name rs-economy rs-economy-bot
+docker build -t unoitachi-bot .
+docker run -d --env-file .env --name unoitachi unoitachi-bot
 ```
 
 ## Commands
 
 | Group | Commands |
 | --- | --- |
-| Economy | `/start` `/profile` `/bal [@user]` `/pay @user amount` `/leader` |
+| Economy | `/start` `/profile` `/bal [@user\|id]` `/pay @user\|id amount` `/leader` — reply-based `/bal` `/pay` work in every chat |
 | Bank | `/deposit amount` `/withdraw amount` `/bank` `/transactions` |
 | Market | `/stocklist` `/stock SYMBOL` `/buystock SYMBOL qty` `/sellstock SYMBOL qty` `/portfolio` |
 | Games | `/fly low\|medium\|high amount` `/mines amount` `/bet amount` |
-| Owner | `/addsudo @user` `/rsudo @user` |
-| Admin (owner + sudo) | `/give @user amount` `/remove @user amount` `/setinterest rate` `/settax rate` `/banksettings` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` |
+| Owner | `/addsudo @user` `/rsudo @user` (private chat only) |
+| Admin (owner + sudo) | `/give @user amount` `/remove @user amount` `/setinterest rate` `/settax rate` `/banksettings` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
 
 ## Admin system
 

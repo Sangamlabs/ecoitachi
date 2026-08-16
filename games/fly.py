@@ -40,7 +40,7 @@ def roll(difficulty: str, settings: dict[str, Any]) -> dict[str, Any]:
     return {"won": won, "multiplier": multiplier}
 
 
-async def play(user_id: int, difficulty: str, bet: int) -> dict[str, Any]:
+async def play(user_id: int, difficulty: str, bet: int, *, chat_id: int | None = None) -> dict[str, Any]:
     """Run a full fly round through the game engine."""
     settings = await game_engine.validate_game_input("fly")
     cfg = settings[difficulty]
@@ -54,6 +54,7 @@ async def play(user_id: int, difficulty: str, bet: int) -> dict[str, Any]:
         payout=payout,
         multiplier=result["multiplier"],
         meta={"difficulty": difficulty, "risk": cfg.get("risk")},
+        chat_id=chat_id,
     )
     return {
         "difficulty": difficulty,

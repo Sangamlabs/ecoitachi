@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Ubuntu VPS deployment script for RS Economy Bot
+# Ubuntu VPS deployment script for UNOITACHI Bot
 # Tested on Ubuntu 22.04 / 24.04 (x86_64)
 #
 # Usage:  sudo bash deploy_vps.sh
 #
 set -euo pipefail
 
-APP_DIR="/opt/rs-economy-bot"
+APP_DIR="/opt/unoitachi-bot"
 REPO_URL="${REPO_URL:-https://github.com/Sangamlabs/ecoitachi.git}"
 
 echo "==> [1/6] Updating system packages"
@@ -46,20 +46,20 @@ echo "==> [6/6] Configuring environment and systemd service"
 if [ ! -f "${APP_DIR}/.env" ]; then
   cp "${APP_DIR}/.env.example" "${APP_DIR}/.env"
   echo "!!!  Edit ${APP_DIR}/.env and fill in API_ID, API_HASH, BOT_TOKEN and OWNER_ID."
-  echo "!!!  Then run:  sudo systemctl start rs-economy"
+  echo "!!!  Then run:  sudo systemctl start unoitachi"
   exit 0
 fi
 
 chown -R "$(id -un)" "${APP_DIR}" 2>/dev/null || true
 
 sed "s/^User=ubuntu/User=$(id -un)/" \
-  "${APP_DIR}/deploy/rs-economy.service" > /etc/systemd/system/rs-economy.service
+  "${APP_DIR}/deploy/unoitachi.service" > /etc/systemd/system/unoitachi.service
 
 systemctl daemon-reload
-systemctl enable rs-economy
-systemctl restart rs-economy
+systemctl enable unoitachi
+systemctl restart unoitachi
 
 echo ""
 echo "==> Done. Status:"
-systemctl status rs-economy --no-pager || true
-echo "Logs:  journalctl -u rs-economy -f"
+systemctl status unoitachi --no-pager || true
+echo "Logs:  journalctl -u unoitachi -f"

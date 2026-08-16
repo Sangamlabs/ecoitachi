@@ -13,18 +13,20 @@ from utils.money import format_money
 from utils.sender import reply_html
 from utils.validators import parse_amount_or_error
 
+NOT_CHANNEL = ~filters.channel & ~filters.bot
+
 
 def register(app: Client) -> None:
-    @app.on_message(filters.command("bank") & filters.private)
-    @safe_handler
+    @app.on_message(filters.command("bank") & NOT_CHANNEL)
+    @safe_handler(feature="economy")
     async def cmd_bank(client: Client, message: Message):
         await ensure_user(client, message)
         view = await bank_service.get_bank_view(message.from_user.id)
         user = await users_db.get_user(message.from_user.id)
         await reply_html(client, message, msgs.bank(user, view["settings"], view["tax_pool"]))
 
-    @app.on_message(filters.command("deposit") & filters.private)
-    @safe_handler
+    @app.on_message(filters.command("deposit") & NOT_CHANNEL)
+    @safe_handler(feature="economy")
     async def cmd_deposit(client: Client, message: Message):
         await ensure_user(client, message)
         amount, err = parse_amount_or_error(message.command[1] if len(message.command) > 1 else "")
@@ -40,8 +42,8 @@ def register(app: Client) -> None:
             ),
         )
 
-    @app.on_message(filters.command("withdraw") & filters.private)
-    @safe_handler
+    @app.on_message(filters.command("withdraw") & NOT_CHANNEL)
+    @safe_handler(feature="economy")
     async def cmd_withdraw(client: Client, message: Message):
         await ensure_user(client, message)
         amount, err = parse_amount_or_error(message.command[1] if len(message.command) > 1 else "")
@@ -58,8 +60,8 @@ def register(app: Client) -> None:
             ),
         )
 
-    @app.on_message(filters.command("transactions") & filters.private)
-    @safe_handler
+    @app.on_message(filters.command("transactions") & NOT_CHANNEL)
+    @safe_handler(feature="economy")
     async def cmd_transactions(client: Client, message: Message):
         await ensure_user(client, message)
         recent = await tx_service.get_recent(message.from_user.id, 10)

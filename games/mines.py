@@ -128,7 +128,9 @@ def payout_for(bet: int, reveals: int, table: list[float]) -> int:
     return int(bet * multiplier_after(reveals, table))
 
 
-async def start(user_id: int, bet: int) -> tuple[str, dict[str, Any]]:
+async def start(
+    user_id: int, bet: int, *, chat_id: int | None = None, message_id: int | None = None
+) -> tuple[str, dict[str, Any]]:
     """Start a mines game; returns (session_id, state)."""
     cfg = await board_settings()
     await game_engine.check_and_lock_bet(user_id, "mines", bet)
@@ -140,7 +142,13 @@ async def start(user_id: int, bet: int) -> tuple[str, dict[str, Any]]:
         "reveals_so_far": 0,
     }
     session_id = await game_engine.create_session(
-        user_id, "mines", bet, state, duration=cfg.get("duration")
+        user_id,
+        "mines",
+        bet,
+        state,
+        duration=cfg.get("duration"),
+        chat_id=chat_id,
+        message_id=message_id,
     )
     return session_id, state
 
@@ -149,13 +157,15 @@ def _mine_hit(tile: int, state: dict[str, Any]) -> bool:
     return tile in state.get("mines", [])
 
 
-async def reveal(session_id: str, user_id: int, tile: int) -> dict[str, Any]:
+async def reveal(
+    session_id: str, user_id: int, tile: int, *, chat_id: int | None = None, message_id: int | None = None
+) -> dict[str, Any]:
     """Reveal a tile. Returns ``{game_over, won, payout, state, ...}``.
 
     On a mine the game is settled as a loss; on the last safe tile it is
     settled as a win.
     """
-    session = await _owned_active_session(session_id, user_id)
+    session = await _owned_active_session(session_id, user_id, chat_id=chat_id, message_id=message_id)
     state = session.get("state", {})
     tile = int(tile)
     if not 0 <= tile < TILES:
@@ -195,9 +205,11 @@ async def reveal(session_id: str, user_id: int, tile: int) -> dict[str, Any]:
     }
 
 
-async def cashout(session_id: str, user_id: int) -> dict[str, Any]:
+async def cashout(
+    session_id: str, user_id: int, *, chat_id: int | None = None, message_id: int | None = None
+) -> dict[str, Any]:
     """Cash out the current revealed position as a win."""
-    session = await _owned_active_session(session_id, user_id)
+    session = await _owned_active_session(session_id, user_id, chat_id=chat_id, message_id=message_id)
     state = session.get("state", {})
     cfg = await board_settings()
     reveals = len(state.get("revealed", []))
@@ -221,7 +233,13 @@ async def _update_state(session_id: str, state: dict[str, Any]) -> None:
     )
 
 
-async def _owned_active_session(session_id: str, user_id: int) -> dict[str, Any]:
+async def _owned_active_session(
+    session_id: str,
+    user_id: int,
+    *,
+    chat_id: int | None = None,
+    message_id: int | None = None,
+) -> dict[str, Any]:
     session = await games_db.get_session(session_id)
     if session is None:
         raise NoActiveGame("Game session not found.")
@@ -229,6 +247,10 @@ async def _owned_active_session(session_id: str, user_id: int) -> dict[str, Any]
         raise GameError("You cannot control another user's game.")
     if session.get("status") != "active":
         raise NoActiveGame("This game has already ended.")
+    if chat_id is not None and session.get("chat_id") is not None and session["chat_id"] != chat_id:
+        raise GameError("This game was started in another chat.")
+    if message_id is not None and session.get("message_id") is not None and session["message_id"] != message_id:
+        raise GameError("This game is no longer active in this message.")
     return session
 
 

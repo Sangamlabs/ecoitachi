@@ -25,7 +25,7 @@ async def get_bank_view(user_id: int) -> dict[str, Any]:
 
 
 async def deposit(user_id: int, amount: int) -> dict[str, Any]:
-    """Move RS wallet → bank and log the transaction."""
+    """Move UN wallet → bank and log the transaction."""
     if amount <= 0:
         raise MoneyError("Amount must be positive.")
     before = await economy.get_balance(user_id)
@@ -42,7 +42,7 @@ async def deposit(user_id: int, amount: int) -> dict[str, Any]:
 
 
 async def withdraw(user_id: int, amount: int) -> dict[str, Any]:
-    """Move RS bank → wallet, charging the configured tax.
+    """Move UN bank → wallet, charging the configured tax.
 
     The tax is captured into the pool (not deleted) and both WITHDRAW and TAX
     transactions are recorded.

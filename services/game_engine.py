@@ -115,14 +115,27 @@ async def check_and_lock_bet(
 
 
 async def create_session(
-    user_id: int, game: str, bet: int, state: dict[str, Any], duration: int | None = None
+    user_id: int,
+    game: str,
+    bet: int,
+    state: dict[str, Any],
+    duration: int | None = None,
+    *,
+    chat_id: int | None = None,
+    message_id: int | None = None,
 ) -> str:
-    """Persist an active game session and record the GAME_BET transaction."""
+    """Persist an active game session and record the GAME_BET transaction.
+
+    ``chat_id``/``message_id`` bind the session to the chat (and inline board
+    message) where it started so callbacks can be verified against them.
+    """
     session_id = new_game_id()
     doc = {
         "game_id": session_id,
         "game": game,
         "user_id": user_id,
+        "chat_id": chat_id,
+        "message_id": message_id,
         "bet": bet,
         "status": "active",
         "state": state,
@@ -246,10 +259,13 @@ async def instant_game(
     payout: int,
     multiplier: float | None = None,
     meta: dict[str, Any] | None = None,
+    chat_id: int | None = None,
 ) -> dict[str, Any]:
     """Run a single-shot game (fly, bet) end-to-end and return the outcome."""
     await check_and_lock_bet(user_id, game, bet)
-    session_id = await create_session(user_id, game, bet, {"instant": True}, duration=0)
+    session_id = await create_session(
+        user_id, game, bet, {"instant": True}, duration=0, chat_id=chat_id
+    )
     try:
         await settle_game(
             session_id,

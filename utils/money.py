@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Union
 
-UNIT = 100  # 1 RS = 100 sub-units
+UNIT = 100  # 1 UN = 100 sub-units
 SYMBOL = "₹"
 
 Number = Union[int, str, float]

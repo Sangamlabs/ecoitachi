@@ -27,7 +27,7 @@ class Config:
     API_HASH: str = os.getenv("API_HASH", "")
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-    MONGO_DB_NAME: str = os.getenv("MONGO_DB_NAME", "rs_economy_bot")
+    MONGO_DB_NAME: str = os.getenv("MONGO_DB_NAME", "unoitachi_bot")
     OWNER_ID: int = int(os.getenv("OWNER_ID", "0"))
     CATBOX_ENABLED: bool = _get_bool("CATBOX_ENABLED", False)
     CATBOX_API_URL: str = os.getenv(

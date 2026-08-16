@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 MINES_CB_PREFIX = "mines:"
 
+NOT_CHANNEL = ~filters.channel & ~filters.bot
+
 
 def _parse_mines_callback(data: str) -> tuple[str, str] | None:
     """Split ``mines:SESSION_ID:ACTION`` into (session_id, action)."""
@@ -30,8 +32,8 @@ def _parse_mines_callback(data: str) -> tuple[str, str] | None:
 
 
 def register(app: Client) -> None:
-    @app.on_message(filters.command("fly") & filters.private)
-    @safe_handler
+    @app.on_message(filters.command("fly") & NOT_CHANNEL)
+    @safe_handler(feature="games")
     async def cmd_fly(client: Client, message: Message):
         await ensure_user(client, message)
         args = message.command[1:]
@@ -46,7 +48,9 @@ def register(app: Client) -> None:
         if err:
             await reply_html(client, message, msgs.error(err))
             return
-        result = await fly_game.play(message.from_user.id, difficulty, bet)
+        result = await fly_game.play(
+            message.from_user.id, difficulty, bet, chat_id=message.chat.id
+        )
         await reply_html(
             client, message,
             msgs.fly_result(
@@ -55,22 +59,22 @@ def register(app: Client) -> None:
             ),
         )
 
-    @app.on_message(filters.command("bet") & filters.private)
-    @safe_handler
+    @app.on_message(filters.command("bet") & NOT_CHANNEL)
+    @safe_handler(feature="games")
     async def cmd_bet(client: Client, message: Message):
         await ensure_user(client, message)
         bet, err = parse_amount_or_error(message.command[1] if len(message.command) > 1 else "")
         if err:
             await reply_html(client, message, msgs.error(f"Usage: <code>/bet amount</code>. {err}"))
             return
-        result = await bet_game.play(message.from_user.id, bet)
+        result = await bet_game.play(message.from_user.id, bet, chat_id=message.chat.id)
         await reply_html(
             client, message,
             msgs.bet_result(result["bet"], result["won"], result["multiplier"], result["payout"], result["session_id"]),
         )
 
-    @app.on_message(filters.command("mines") & filters.private)
-    @safe_handler
+    @app.on_message(filters.command("mines") & NOT_CHANNEL)
+    @safe_handler(feature="games")
     async def cmd_mines(client: Client, message: Message):
         await ensure_user(client, message)
         bet, err = parse_amount_or_error(message.command[1] if len(message.command) > 1 else "")
@@ -78,7 +82,9 @@ def register(app: Client) -> None:
             await reply_html(client, message, msgs.error(f"Usage: <code>/mines amount</code>. {err}"))
             return
         cfg = await mines_game.board_settings()
-        session_id, state = await mines_game.start(message.from_user.id, bet)
+        session_id, state = await mines_game.start(
+            message.from_user.id, bet, chat_id=message.chat.id
+        )
         text = mines_game.game_header(
             bet,
             mines_game.multiplier_after(1, cfg["multipliers"]),
@@ -86,10 +92,12 @@ def register(app: Client) -> None:
             0,
         )
         text += f"\n<pre>{mines_game.render_board(state)}</pre>"
-        await reply_html(
+        sent = await reply_html(
             client, message, text,
             reply_markup=mines_game.board_keyboard(session_id, state),
         )
+        if sent is not None:
+            await games_db.bind_message(session_id, sent.id)
 
     @app.on_callback_query(filters.regex(rf"^{MINES_CB_PREFIX}"))
     async def cb_mines(client: Client, callback: CallbackQuery):
@@ -99,9 +107,13 @@ def register(app: Client) -> None:
             return
         session_id, action = parsed
         user_id = callback.from_user.id
+        chat_id = callback.message.chat.id
+        message_id = callback.message.id
         try:
             if action == "cash":
-                result = await mines_game.cashout(session_id, user_id)
+                result = await mines_game.cashout(
+                    session_id, user_id, chat_id=chat_id, message_id=message_id
+                )
                 session_doc = await games_db.get_session(session_id)
                 bet = int(session_doc.get("bet", 0)) if session_doc else 0
                 text = (
@@ -113,7 +125,9 @@ def register(app: Client) -> None:
                 await edit_html(client, callback.message, text, reply_markup=None)
             else:
                 tile = int(action)
-                result = await mines_game.reveal(session_id, user_id, tile)
+                result = await mines_game.reveal(
+                    session_id, user_id, tile, chat_id=chat_id, message_id=message_id
+                )
                 reveals = len(result["state"].get("revealed", []))
                 if result["game_over"]:
                     if result["won"]:

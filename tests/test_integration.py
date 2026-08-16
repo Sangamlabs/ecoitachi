@@ -21,7 +21,7 @@ os.environ.setdefault("API_ID", "12345")
 os.environ.setdefault("API_HASH", "testhash")
 os.environ.setdefault("BOT_TOKEN", "123:testtoken")
 os.environ.setdefault("MONGO_URI", "mongodb://127.0.0.1:27017")
-os.environ.setdefault("MONGO_DB_NAME", "rs_economy_tests")
+os.environ.setdefault("MONGO_DB_NAME", "unoitachi_tests")
 os.environ.setdefault("OWNER_ID", "1")
 os.environ.setdefault("CATBOX_ENABLED", "false")
 
@@ -31,6 +31,7 @@ from games import mines as mines_game  # noqa: E402
 from services import (  # noqa: E402
     bank,
     economy,
+    group_config,
     interest,
     stocks,
     tax,
@@ -68,6 +69,7 @@ async def clean_db():
     await db["transactions"].delete_many({"user_id": {"$in": [A, B]}})
     await db["stocks"].delete_many({})
     await db["stock_holdings"].delete_many({})
+    await db["group_config"].delete_many({})
     await users_db.get_or_create_user(A, "user_a", "User A")
     await users_db.get_or_create_user(B, "user_b", "User B")
     yield
@@ -190,3 +192,33 @@ async def test_tax_distribution_idempotent():
     dist = await tax.distribute_monthly(now=now + 40 * 86_400)
     assert dist is not None and dist["distributed"] > 0
     assert await tax.distribute_monthly(now=now + 40 * 86_400) is None
+
+
+async def test_group_config_defaults_and_overrides():
+    chat_id = -100_111
+    cfg = await group_config.get_group_config(chat_id)
+    assert cfg["group_enabled"] is True
+    assert cfg["games_enabled"] is True
+
+    cfg = await group_config.update_group_config(chat_id, games_enabled=False)
+    assert cfg["games_enabled"] is False
+    assert cfg["economy_enabled"] is True
+
+    cfg = await group_config.reset_group_config(chat_id)
+    assert cfg["games_enabled"] is True
+
+    assert await group_config.feature_enabled(chat_id, "games") is True
+
+
+async def test_mines_session_bound_to_starting_chat():
+    await economy.admin_give(A, 5_000_000, 1)
+    await cooldown_manager.clear("mines", A)
+    sid, state = await mines_game.start(A, 5_000, chat_id=-100_222)
+    safe_tiles = [t for t in range(36) if t not in state["mines"]]
+    with pytest.raises(game_engine.GameError, match="another chat"):
+        await mines_game.reveal(sid, A, safe_tiles[0], chat_id=-100_333)
+    with pytest.raises(game_engine.GameError, match="another chat"):
+        await mines_game.cashout(sid, A, chat_id=-100_333)
+
+    result = await mines_game.reveal(sid, A, safe_tiles[0], chat_id=-100_222)
+    assert result["game_over"] is False

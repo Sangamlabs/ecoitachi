@@ -1,4 +1,4 @@
-"""RS Economy Bot — entry point.
+"""UNOITACHI Bot — entry point.
 
 Assembles the client, database, handlers and scheduler.  Handlers register
 themselves via the centralized COMMAND_REGISTRY, so new modules can be added
@@ -42,11 +42,13 @@ async def main() -> None:
 
     await mongo.connect()
     from services import settings as settings_service
+    from services import group_config as group_config_service
 
     await settings_service.ensure_indexes()
+    await group_config_service.ensure_indexes()
 
     app = Client(
-        "rs_economy_bot",
+        "unoitachi_bot",
         api_id=config.API_ID,
         api_hash=config.API_HASH,
         bot_token=config.BOT_TOKEN,

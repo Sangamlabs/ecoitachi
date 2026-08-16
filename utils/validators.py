@@ -21,6 +21,35 @@ def resolve_target(user, target_text: str | None):
     return None, None, None
 
 
+def target_from_message(message) -> int | None:
+    """Return the replied-to user's numeric id, or None when not replying to a user.
+
+    The reply target is the most reliable identity — usernames can change, numeric
+    Telegram user ids do not.
+    """
+    reply = getattr(message, "reply_to_message", None)
+    if reply and getattr(reply, "from_user", None):
+        return reply.from_user.id
+    return None
+
+
+def parse_target_arg(arg: str | None) -> tuple[int, str | None] | None:
+    """Parse an explicit target argument.
+
+    Returns ``(user_id, None)`` for a numeric id, ``(-1, username)`` for an
+    @username reference (resolved separately via the database), or None when
+    the argument is not a target reference.
+    """
+    if not arg:
+        return None
+    arg = arg.strip()
+    if arg.isdigit():
+        return int(arg), None
+    if re.fullmatch(r"@[\w]{3,32}", arg):
+        return -1, arg[1:]
+    return None
+
+
 def parse_user_id(raw: str) -> int | None:
     """Parse a numeric user id or @username reference.
 
