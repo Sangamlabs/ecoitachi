@@ -10,7 +10,7 @@ from pyrogram.types import Message
 from database import users as users_db
 from handlers.common import ensure_user, safe_handler
 from services import economy, leaderboard as leaderboard_service, rob as rob_service
-from services import transaction as tx_service
+from services import tax as tax_service, transaction as tx_service
 from utils import messages as msgs
 from utils.sender import reply_html
 from utils.validators import parse_amount_or_error, parse_target_arg, target_from_message
@@ -103,14 +103,26 @@ def register(app: Client) -> None:
             return
 
         receiver_doc = await users_db.get_or_create_user(target_id)
-        result = await economy.transfer(message.from_user.id, target_id, amount)
+        payment_tax = await tax_service.system_tax_amount("payments", amount)
+        result = await economy.transfer(
+            message.from_user.id, target_id, amount, tax=payment_tax
+        )
+        if payment_tax > 0:
+            await tx_service.record(
+                user_id=message.from_user.id,
+                ttype=tx_service.TAX,
+                amount=payment_tax,
+                balance_before=result["sender_wallet"] + amount + payment_tax,
+                balance_after=result["sender_wallet"],
+                metadata={"system": "payments", "gross": amount, "receiver": target_id},
+            )
         tx_id = await tx_service.record(
             user_id=message.from_user.id,
             ttype=tx_service.PAY,
             amount=amount,
-            balance_before=result["sender_wallet"] + amount,
+            balance_before=result["sender_wallet"] + amount + payment_tax,
             balance_after=result["sender_wallet"],
-            metadata={"receiver": target_id, "direction": "out"},
+            metadata={"receiver": target_id, "direction": "out", "tax": payment_tax},
         )
         await tx_service.record(
             user_id=target_id,

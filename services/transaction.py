@@ -75,6 +75,11 @@ async def get_recent(user_id: int, limit: int = 10) -> list[dict[str, Any]]:
     return await tx_db.recent_by_user(user_id, limit)
 
 
+async def get_by_id(transaction_id: str) -> dict[str, Any] | None:
+    """Full audit record for one transaction id (used by /track)."""
+    return await tx_db.get_transaction_by_id(transaction_id)
+
+
 async def get_recent_transfers(user_id: int, limit: int = 10) -> list[dict[str, Any]]:
     """Last ``limit`` PAY transfer logs (sent or received) for a user."""
     return await tx_db.recent_transfers_by_user(user_id, limit)

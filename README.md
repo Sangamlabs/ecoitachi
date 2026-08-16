@@ -24,7 +24,10 @@ can be added without rewriting the economy engine.
   it up, and claiming pays out every unclaimed day at once. Rates are admin-configurable via
   `/setincome bank|asset|stock rate`
 - **Tax pool & monthly distribution** — collected taxes are pooled and distributed monthly to the
-  Top-10 earners using admin-configurable rank percentages (idempotent)
+  Top-10 earners using admin-configurable rank percentages (idempotent), with manual `/dtax`
+- **Per-system transaction taxes** — `/addtax assets|stocks|payments|mines|fly|bet rate` charges a %
+  on that system's transactions into the tax pool; `/taxinfo` shows all rates; `/track TX_ID` shows
+  the full audit record of any transaction by id
 - **Stock/crypto market** — `/stocklist`, `/stock`, `/buystock`, `/sellstock`, `/portfolio`
   with a volatility-driven price simulator and price history
 - **Asset market** — a second, fully independent market (`/assets`, `/asset`, `/buyasset`,
@@ -235,7 +238,7 @@ docker run -d --env-file .env --name unoitachi unoitachi-bot
 | Games | `/fly low\|medium\|high amount` `/mines amount` `/bet amount` |
 | Crime | `/rob @user\|id` — steal from a user's bank (reply-based; 60s cooldown, random police catch) |
 | Owner | `/addsudo @user\|id` `/rsudo @user\|id` — work in DM and groups (reply-based in groups) |
-| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/dtax` `/setincome bank\|asset\|stock rate` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/addasset SYMBOL name CATEGORY price volatility` `/editasset SYMBOL field value` `/assetset SYMBOL field value` `/assetprice SYMBOL price` `/assetvolatility SYMBOL v` `/rmasset SYMBOL` `/restoreasset SYMBOL` `/assetinfo SYMBOL` `/assetlist [page]` `/assetsearch query` `/assetowners SYMBOL [page]` `/assetadminstats` `/listinginfo LISTING_ID` `/forcelisting LISTING_ID` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
+| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/dtax` `/addtax system rate` `/taxinfo` `/track TX_ID` `/setincome bank\|asset\|stock rate` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/addasset SYMBOL name CATEGORY price volatility` `/editasset SYMBOL field value` `/assetset SYMBOL field value` `/assetprice SYMBOL price` `/assetvolatility SYMBOL v` `/rmasset SYMBOL` `/restoreasset SYMBOL` `/assetinfo SYMBOL` `/assetlist [page]` `/assetsearch query` `/assetowners SYMBOL [page]` `/assetadminstats` `/listinginfo LISTING_ID` `/forcelisting LISTING_ID` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
 
 ## Admin system
 

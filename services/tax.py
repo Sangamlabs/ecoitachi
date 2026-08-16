@@ -36,6 +36,17 @@ async def collect(user_id: int, amount: int) -> None:
     logger.info("tax collected: user=%s amount=%s", user_id, amount)
 
 
+async def get_system_tax(system: str) -> float:
+    """Return the configured tax rate (percent) for a transaction system."""
+    config = await settings_service.get_system_taxes()
+    return float(config.get(system, 0.0))
+
+
+async def system_tax_amount(system: str, gross: int) -> int:
+    """Compute the tax to collect for a system transaction of ``gross``."""
+    return int(gross * await get_system_tax(system)) // 100
+
+
 async def _month_key(ts: int) -> str:
     return time.strftime("%Y-%m", time.gmtime(ts))
 

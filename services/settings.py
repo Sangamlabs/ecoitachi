@@ -46,6 +46,14 @@ DEFAULTS: dict[str, Any] = {
         "asset_rate_percent": 1.0,
         "stock_rate_percent": 1.0,
     },
+    "system_taxes": {
+        "assets": 0.0,
+        "stocks": 0.0,
+        "payments": 0.0,
+        "mines": 0.0,
+        "fly": 0.0,
+        "bet": 0.0,
+    },
 }
 
 
@@ -147,6 +155,22 @@ async def update_income_config(**changes: Any) -> dict[str, Any]:
     current.update({k: v for k, v in changes.items() if k in DEFAULTS["income"]})
     await mongo.db[COLLECTION].update_one(
         {"key": "global"}, {"$set": {"income": current}}, upsert=True
+    )
+    return current
+
+
+async def get_system_taxes() -> dict[str, Any]:
+    """Return per-system transaction tax rates (percent), merged over defaults."""
+    settings = await get_settings()
+    return dict(settings.get("system_taxes", DEFAULTS["system_taxes"]))
+
+
+async def update_system_taxes(**changes: Any) -> dict[str, Any]:
+    """Overwrite one or more per-system tax rates (percent)."""
+    current = await get_system_taxes()
+    current.update({k: v for k, v in changes.items() if k in DEFAULTS["system_taxes"]})
+    await mongo.db[COLLECTION].update_one(
+        {"key": "global"}, {"$set": {"system_taxes": current}}, upsert=True
     )
     return current
 

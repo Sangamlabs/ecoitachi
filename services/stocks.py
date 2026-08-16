@@ -13,7 +13,7 @@ import time
 from typing import Any
 
 from database import stocks as stocks_db
-from services import economy, transaction as tx_service
+from services import economy, tax as tax_service, transaction as tx_service
 from services.economy import EconomyError
 from utils.money import MoneyError, multiply
 
@@ -116,19 +116,23 @@ async def buy_stock(user_id: int, symbol: str, qty_raw: str) -> dict[str, Any]:
     if cost <= 0:
         raise MoneyError("Purchase cost must be positive.")
 
+    tax = await tax_service.system_tax_amount("stocks", cost)
+    total = cost + tax
     before = await economy.get_balance(user_id)
-    await economy.remove_wallet(user_id, cost, spend=True)
+    await economy.remove_wallet(user_id, total, spend=True)
+    if tax > 0:
+        await tax_service.collect(user_id, tax)
     await stocks_db.add_holding(user_id, asset["symbol"], qty)
 
     tx_id = await tx_service.record(
         user_id=user_id,
         ttype=tx_service.STOCK_BUY,
-        amount=cost,
+        amount=total,
         balance_before=before["wallet"],
-        balance_after=before["wallet"] - cost,
-        metadata={"symbol": asset["symbol"], "quantity": qty, "price": price},
+        balance_after=before["wallet"] - total,
+        metadata={"symbol": asset["symbol"], "quantity": qty, "price": price, "tax": tax},
     )
-    return {"symbol": asset["symbol"], "quantity": qty, "cost": cost, "price": price, "tx_id": tx_id}
+    return {"symbol": asset["symbol"], "quantity": qty, "cost": cost, "tax": tax, "total": total, "price": price, "tx_id": tx_id}
 
 
 async def sell_stock(user_id: int, symbol: str, qty_raw: str) -> dict[str, Any]:
@@ -144,17 +148,21 @@ async def sell_stock(user_id: int, symbol: str, qty_raw: str) -> dict[str, Any]:
     if not await stocks_db.remove_holding(user_id, asset["symbol"], qty):
         raise EconomyError("Insufficient holdings to sell.")
 
+    tax = await tax_service.system_tax_amount("stocks", value)
+    received = value - tax
     before = await economy.get_balance(user_id)
-    await economy.add_wallet(user_id, value, earn=True)
+    await economy.add_wallet(user_id, received, earn=True)
+    if tax > 0:
+        await tax_service.collect(user_id, tax)
     tx_id = await tx_service.record(
         user_id=user_id,
         ttype=tx_service.STOCK_SELL,
-        amount=value,
+        amount=received,
         balance_before=before["wallet"],
-        balance_after=before["wallet"] + value,
-        metadata={"symbol": asset["symbol"], "quantity": qty, "price": price},
+        balance_after=before["wallet"] + received,
+        metadata={"symbol": asset["symbol"], "quantity": qty, "price": price, "tax": tax},
     )
-    return {"symbol": asset["symbol"], "quantity": qty, "value": value, "price": price, "tx_id": tx_id}
+    return {"symbol": asset["symbol"], "quantity": qty, "value": value, "tax": tax, "received": received, "price": price, "tx_id": tx_id}
 
 
 async def portfolio(user_id: int) -> dict[str, Any]:

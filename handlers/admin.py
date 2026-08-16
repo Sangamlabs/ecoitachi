@@ -322,6 +322,66 @@ def register(app: Client) -> None:
             return
         await reply_html(client, message, msgs.tax_distribution(result))
 
+    @app.on_message(filters.command("track") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler
+    async def cmd_track(client: Client, message: Message):
+        await ensure_user(client, message)
+        raw = message.command[1] if len(message.command) > 1 else None
+        if not raw:
+            await reply_html(client, message, msgs.error("Usage: <code>/track TRANSACTION_ID</code>"))
+            return
+        tx_id = raw.strip()
+        doc = await tx_service.get_by_id(tx_id)
+        if doc is None:
+            await reply_html(client, message, msgs.error(f"Transaction <code>#{tx_id}</code> not found."))
+            return
+        await reply_html(client, message, msgs.tx_track_detail(doc))
+
+    @app.on_message(filters.command("addtax") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler
+    async def cmd_addtax(client: Client, message: Message):
+        await ensure_user(client, message)
+        args = message.command[1:]
+        valid = ("bank", "assets", "stocks", "payments", "mines", "fly", "bet")
+        if len(args) != 2 or args[0].lower() not in valid:
+            await reply_html(
+                client, message,
+                msgs.error(
+                    "Usage: <code>/addtax system rate</code> (percent). "
+                    "Systems: " + ", ".join(valid) + "."
+                ),
+            )
+            return
+        system, raw_rate = args[0].lower(), args[1]
+        try:
+            rate = float(raw_rate)
+        except ValueError:
+            await reply_html(client, message, msgs.error("Invalid rate."))
+            return
+        if not is_safe_percent(rate):
+            await reply_html(client, message, msgs.error("Rate must be between 0 and 100."))
+            return
+        if system == "bank":
+            await bank_service.set_tax_rate(rate, message.from_user.id)
+        else:
+            await settings_service.update_system_taxes(**{system: rate})
+        await reply_html(
+            client, message,
+            msgs.success(f"Tax on <code>{system}</code> transactions set to <b>{rate}%</b>."),
+        )
+
+    @app.on_message(filters.command("taxinfo") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler
+    async def cmd_taxinfo(client: Client, message: Message):
+        await ensure_user(client, message)
+        pool = await tax_service.get_pool_size()
+        taxes = await settings_service.get_system_taxes()
+        bank_settings = await bank_service.get_bank_settings()
+        await reply_html(client, message, msgs.taxinfo(taxes, pool, bank_settings))
+
     @app.on_message(filters.command("banksettings") & NOT_CHANNEL)
     @sudo_only
     @safe_handler

@@ -19,7 +19,7 @@ from database import asset_listings as listings_db
 from database import transactions as tx_db
 from database import users as users_db
 from services import economy, settings as settings_service
-from services import transaction as tx_service
+from services import tax as tax_service, transaction as tx_service
 from services.economy import InsufficientBalance
 from utils.money import format_money, multiply, percentage
 
@@ -212,7 +212,8 @@ async def buy(
     price = price_for(asset, cfg, "buy")
     cost = multiply(price, qty)
     fee = percentage(cost, float(cfg.get("buy_fee_percent", 0.0)))
-    total = cost + fee
+    tax = await tax_service.system_tax_amount("assets", cost)
+    total = cost + fee + tax
     if total <= 0:
         raise AssetError("Purchase cost must be positive.")
 
@@ -230,6 +231,8 @@ async def buy(
         raise AssetError(
             f"Insufficient wallet balance. Needed <b>{format_money(total)}</b>."
         )
+    if tax > 0:
+        await tax_service.collect(user_id, tax)
     await holdings_db.add_holding(user_id, asset["asset_id"], asset["symbol"], qty, cost, price)
     await _volume_inc(asset["symbol"])
     tx_id = await tx_service.record(
@@ -245,6 +248,7 @@ async def buy(
             "price": price,
             "total_value": cost,
             "fee": fee,
+            "tax": tax,
         },
     )
     await refresh_user_asset_value(user_id)
@@ -256,6 +260,7 @@ async def buy(
         "price": price,
         "cost": cost,
         "fee": fee,
+        "tax": tax,
         "total": total,
         "tx_id": tx_id,
     }
@@ -287,7 +292,8 @@ async def sell(
     price = price_for(asset, cfg, "sell")
     value = multiply(price, qty)
     fee = percentage(value, float(cfg.get("sell_fee_percent", 0.0)))
-    received = value - fee
+    tax = await tax_service.system_tax_amount("assets", value)
+    received = value - fee - tax
 
     if not await holdings_db.remove_holding(user_id, asset["asset_id"], qty, price):
         raise InsufficientHoldings(
@@ -296,6 +302,8 @@ async def sell(
 
     before = await economy.get_balance(user_id)
     await economy.add_wallet(user_id, received, earn=False)
+    if tax > 0:
+        await tax_service.collect(user_id, tax)
     await _volume_inc(asset["symbol"])
     tx_id = await tx_service.record(
         user_id=user_id,
@@ -310,6 +318,7 @@ async def sell(
             "price": price,
             "total_value": value,
             "fee": fee,
+            "tax": tax,
         },
     )
     await refresh_user_asset_value(user_id)
@@ -321,6 +330,7 @@ async def sell(
         "price": price,
         "value": value,
         "fee": fee,
+        "tax": tax,
         "received": received,
         "tx_id": tx_id,
     }

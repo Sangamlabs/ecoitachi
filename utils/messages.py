@@ -420,7 +420,10 @@ def admin_help() -> str:
         f"<code>/setinterest rate</code> — interest % per 24h\n"
         f"<code>/settax rate</code> — withdrawal tax %\n"
         f"<code>/banksettings</code> — view bank settings\n"
-        f"<code>/dtax</code> — manually distribute the tax pool now\n\n"
+        f"<code>/dtax</code> — manually distribute the tax pool now\n"
+        f"<code>/addtax system rate</code> — tax % for a system's transactions\n"
+        f"<code>/taxinfo</code> — all tax rates + pool\n"
+        f"<code>/track TX_ID</code> — full transaction detail\n\n"
         f"<b>💰 Daily Income</b>\n"
         f"<code>/setincome bank|asset|stock rate</code> — daily income % per 24h\n\n"
         f"<b>🎮 Games</b>\n"
@@ -470,6 +473,42 @@ def admin_stats(stats: dict[str, Any]) -> str:
         f"🧾 Transactions: {stats['transactions']}\n"
         f"📈 Active Stocks: {stats['stocks']}"
         f"</blockquote>"
+    )
+
+
+def tx_track_detail(tx: dict[str, Any]) -> str:
+    """Full audit detail for one transaction (used by /track)."""
+    meta = tx.get("metadata") or {}
+    meta_lines = [
+        f"<code>{escape(str(k))}</code>: <b>{escape(str(v))}</b>"
+        for k, v in meta.items()
+    ]
+    return (
+        f"<b>🧾 TRANSACTION TRACKER</b>\n"
+        f"<blockquote>"
+        f"🆔 ID: <code>#{tx.get('transaction_id', '')}</code>\n"
+        f"👤 User: <code>{tx.get('user_id', '')}</code>\n"
+        f"📦 Type: <b>{escape(str(tx.get('type', '')))}</b>\n"
+        f"💰 Amount: {format_money(int(tx.get('amount', 0)))}\n"
+        f"💵 Balance Before: {format_money(int(tx.get('balance_before', 0)))}\n"
+        f"💵 Balance After: {format_money(int(tx.get('balance_after', 0)))}"
+        f"</blockquote>"
+        + ("\n📎 Metadata:\n" + "\n".join(meta_lines) if meta_lines else "")
+        + f"\n🕒 At: <code>{tx.get('created_at', '')}</code>"
+    )
+
+
+def taxinfo(taxes: dict[str, Any], pool: int, bank_settings: dict[str, Any]) -> str:
+    """Admin view of every per-system tax rate + tax pool size."""
+    rows = [f"<code>{k}</code>: <b>{v}%</b>" for k, v in taxes.items()]
+    bank_rate = bank_settings.get("withdrawal_tax_rate", 5.0)
+    return (
+        f"<b>🏛️ TAX INFO</b>\n"
+        f"<blockquote>"
+        f"💰 Pool: {format_money(pool)}\n"
+        f"🏦 Bank (withdrawal): <b>{bank_rate}%</b>"
+        f"</blockquote>\n"
+        f"📊 System taxes:\n" + "\n".join(rows)
     )
 
 

@@ -21,7 +21,8 @@ import uuid
 from typing import Any
 
 from database import games as games_db
-from services import economy, settings as settings_service, transaction as tx_service
+from services import economy, settings as settings_service, tax as tax_service
+from services import transaction as tx_service
 from services.economy import ensure_active
 from utils.money import MoneyError
 
@@ -182,8 +183,20 @@ async def settle_game(
     if won:
         if payout < 0:
             raise MoneyError("Invalid payout.")
-        await economy.add_wallet(user_id, payout, earn=True)
-        await _record_game_tx(session, tx_service.GAME_WIN, payout, outcome, multiplier, meta)
+        game = session.get("game", "")
+        tax = await tax_service.system_tax_amount(game, payout)
+        net = payout - tax
+        await economy.add_wallet(user_id, net, earn=True)
+        if tax > 0:
+            await tax_service.collect(user_id, tax)
+        await _record_game_tx(
+            session,
+            tx_service.GAME_WIN,
+            net,
+            outcome,
+            multiplier,
+            {"gross_payout": payout, "tax": tax},
+        )
     else:
         await _record_game_tx(session, tx_service.GAME_LOSS, 0, outcome, multiplier, meta)
 

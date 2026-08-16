@@ -22,6 +22,10 @@ async def insert_transaction(doc: dict[str, Any]) -> str:
     return doc["transaction_id"]
 
 
+async def get_transaction_by_id(transaction_id: str) -> dict[str, Any] | None:
+    return await mongo.db[COLLECTION].find_one({"transaction_id": transaction_id})
+
+
 async def recent_by_user(user_id: int, limit: int = 10) -> list[dict[str, Any]]:
     cursor = mongo.db[COLLECTION].find({"user_id": user_id}).sort("created_at", -1).limit(limit)
     return [doc async for doc in cursor]

@@ -322,6 +322,32 @@ BANK
     tax_distributions collection under its own key.
     Example: /dtax
 
+/addtax system rate
+    Set a transaction tax (percent) for one system. The tax is automatically
+    collected into the tax pool when that system's transactions happen.
+    Systems:
+        bank     - withdrawal tax (same as /settax)
+        assets   - asset buys and sells
+        stocks   - stock buys and sells
+        payments - /pay transfers (charged to the sender, on top of amount)
+        mines    - mines payouts
+        fly      - fly payouts
+        bet      - bet payouts
+    Rates are percent per transaction, valid 0-100. Default 0% (except bank
+    which defaults to 5%). Use /taxinfo to view all rates.
+    Examples:
+        /addtax assets 2        (2% on every asset buy/sell)
+        /addtax payments 1      (1% on every /pay, sender pays amount + 1%)
+        /addtax mines 5         (5% withheld from mines winnings)
+
+/taxinfo
+    Show the tax pool size and every per-system transaction tax rate.
+
+/track TRANSACTION_ID
+    Look up one transaction by its id and show the full audit record: id,
+    user, type, amount, balance before/after, metadata and timestamp.
+    Example: /track 3f2a1b4c9d8e7f6a
+
 /setincome bank|asset|stock rate
     Daily income percentage per 24 hours for a claim source. Valid 0-100.
     Defaults: bank 2%, asset 1%, stock 1%. The income is claimed by users

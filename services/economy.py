@@ -115,25 +115,37 @@ async def remove_wallet(
     return {"wallet": result.get("wallet", 0), "bank": result.get("bank", 0)}
 
 
-async def transfer(sender_id: int, receiver_id: int, amount: int) -> dict[str, Any]:
+async def transfer(
+    sender_id: int,
+    receiver_id: int,
+    amount: int,
+    *,
+    tax: int = 0,
+) -> dict[str, Any]:
     """Move UN between two users atomically and durably.
 
-    Returns metadata: ``{sender, receiver, amount}``.  Deduction uses a balance
-    guard; the credit is written with retry, and a failed credit refunds the
-    sender so no money is ever lost or created silently.
+    The sender is charged ``amount + tax`` (tax goes to the tax pool) while
+    the receiver is credited ``amount``.  Deduction uses a balance guard; the
+    credit is written with retry, and a failed credit refunds the sender so
+    no money is ever lost or created silently.
+
+    Returns metadata: ``{sender, receiver, amount, tax, ...}``.
     """
     if sender_id == receiver_id:
         raise EconomyError("You cannot pay yourself.")
     if amount <= 0:
         raise MoneyError("Amount must be positive.")
+    if tax < 0:
+        raise MoneyError("Tax cannot be negative.")
+    total = amount + tax
     sender = await _require_user(sender_id)
     receiver = await _require_user(receiver_id)
     await ensure_active(sender)
     await ensure_active(receiver)
 
-    result = await mongo_db_update_guarded(sender_id, amount, {"wallet": -amount, "total_spent": amount})
+    result = await mongo_db_update_guarded(sender_id, total, {"wallet": -total, "total_spent": total})
     if result is None:
-        raise InsufficientBalance(amount, sender.get("wallet", 0))
+        raise InsufficientBalance(total, sender.get("wallet", 0))
 
     credited = False
     try:
@@ -141,14 +153,21 @@ async def transfer(sender_id: int, receiver_id: int, amount: int) -> dict[str, A
         credited = True
     except Exception:
         logger.exception("crediting %s failed; refunding sender %s", receiver_id, sender_id)
-        await users_db.inc(sender_id, {"wallet": amount})
+        await users_db.inc(sender_id, {"wallet": total})
     if not credited:
         raise EconomyError("Payment failed; money was refunded. Try again.")
+
+    if tax > 0:
+        from services import tax as tax_service
+
+        await tax_service.collect(sender_id, tax)
 
     return {
         "sender": sender_id,
         "receiver": receiver_id,
         "amount": amount,
+        "tax": tax,
+        "total": total,
         "sender_wallet": (await users_db.get_user(sender_id)).get("wallet", 0),
         "receiver_wallet": (await users_db.get_user(receiver_id)).get("wallet", 0),
     }
