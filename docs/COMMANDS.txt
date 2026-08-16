@@ -1,0 +1,327 @@
+================================================================================
+ UNOITACHI BOT — COMPLETE COMMAND REFERENCE
+ (usage, explanation, limits and current defaults for every command)
+================================================================================
+
+GENERAL NOTES
+--------------------------------------------------------------------------------
+- Currency is shown as "₹ UN". Internally money is stored in integer sub-units
+  where 100 units = ₹1, so all amounts are whole numbers. Example: /pay @user 500
+  means 500 units = ₹5.00.
+- Every user is auto-created on first interaction. New users receive a
+  welcome grant of ₹500 (50,000 units) in their wallet (admin-configurable).
+- Most commands work in private chats, groups AND supergroups. Channels and
+  bots are ignored. The only commands restricted to private chat are
+  /addsudo and /rsudo.
+- Reply-based target resolution: replying to a user's message is the most
+  reliable way to target them; otherwise you can pass @username or a numeric
+  Telegram user id.
+- All money movements produce an audit transaction with a unique #txid, shown
+  in /transactions.
+
+PERMISSIONS
+--------------------------------------------------------------------------------
+Two ranks control the bot:
+  1. OWNER      — the numeric OWNER_ID set in .env. Full access to everything,
+                  and bypasses per-group "admin commands off" restrictions.
+  2. SUDO ADMIN — users added by the owner with /addsudo. Access to all admin
+                  commands except /addsudo and /rsudo.
+
+Permissions are ALWAYS resolved from numeric Telegram user ids, never
+usernames, so a username change cannot grant or revoke access.
+
+Group admins on Telegram (group admin rights) have NO special bot powers.
+
+--------------------------------------------------------------------------------
+PART 1 — USER COMMANDS (everyone)
+--------------------------------------------------------------------------------
+
+BASICS
+--------------------------------------------------------------------------------
+/start
+    Welcome message. Registers you in the economy if new (grants the ₹500
+    welcome balance). Private chat only.
+
+/help
+    Shows a short summary of user commands.
+
+ECONOMY
+--------------------------------------------------------------------------------
+/profile
+    Your full profile: name, user id, wallet, bank, net worth, stock value,
+    total earned, total spent, current leaderboard rank.
+
+/bal [@user | user_id]
+    Balance of wallet, bank and net worth. With no argument shows your own.
+    Reply to a user's message (with or without argument) to see their balance.
+    Example:  /bal
+              /bal @someone          /bal 123456789
+
+/pay @user amount | /pay user_id amount | reply to a user + /pay amount
+    Send money from YOUR WALLET to another user's wallet. Amount must be > 0
+    and you must have enough in your wallet. Target priority is:
+        reply-to user id  >  explicit numeric id  >  username lookup.
+    The receiver gets a private notification. Logs PAY transaction.
+    Example:  /pay @sangam 5000          (₹50.00)
+              /pay 123456789 5000
+              (reply to a message) /pay 5000
+
+/leader
+    Top-10 net-worth leaderboard (wallet + bank + live stock value).
+
+FREE REWARDS
+--------------------------------------------------------------------------------
+/daily     Claim free money. Default ₹500, cooldown 24h.
+/weekly    Claim free money. Default ₹3,000, cooldown 7 days.
+/monthly   Claim free money. Default ₹12,000, cooldown 30 days.
+
+    The three rewards have independent cooldowns — you can claim all three.
+    Amounts are set by admins via /setreward. While on cooldown you are told
+    how many seconds remain.
+
+BANK
+--------------------------------------------------------------------------------
+/bank
+    Bank overview: your bank balance, wallet, interest rate, withdrawal tax,
+    and the size of the tax pool.
+
+/deposit amount
+    Move money wallet -> bank. Earns interest. Bank balance cannot be spent
+    on games/payments until withdrawn. Example: /deposit 10000 (₹100.00)
+
+/withdraw amount
+    Move money bank -> wallet. A withdrawal tax (default 5%) is charged and
+    goes into the tax pool, which is redistributed monthly to the Top-10
+    earners. Example: /withdraw 10000
+
+/transactions
+    Your 10 most recent transactions with type, amount and txid.
+
+MARKET (stocks)
+--------------------------------------------------------------------------------
+Assets (with volatility): BTC Bitcoin, ETH Ethereum, RSX RS Index,
+SOL Solana, DOGE Dogecoin. Prices tick periodically on the configured
+volatility model. You can buy fractional amounts.
+
+/stocklist
+    Market overview: every asset, current price and 24h change.
+
+/stock SYMBOL
+    Asset detail: price, 24h high/low, volatility. Example: /stock BTC
+
+/buystock SYMBOL quantity
+    Buy fractional shares from your wallet. Example: /buystock BTC 0.01
+    Logs STOCK_BUY transaction.
+
+/sellstock SYMBOL quantity
+    Sell shares you own back to your wallet at current price.
+    Example: /sellstock BTC 0.005. Logs STOCK_SELL transaction.
+
+/portfolio
+    Your holdings, current value and total profit/loss.
+
+GAMES
+--------------------------------------------------------------------------------
+All games require money in your WALLET (bet is locked atomically), and every
+game has a cooldown (default 60s). You can only have ONE active session per
+game. A failed bet only loses the bet; no money is ever duplicated.
+
+/fly low|medium|high amount
+    Plane game. Choose difficulty, bet an amount. Win probability and
+    multiplier depend on the difficulty (see /flyset table below).
+    Example: /fly high 1000
+
+/mines amount
+    Minesweeper-style 6x6 board with a configurable number of bombs (default
+    5). A bet is locked; reveal safe tiles to increase the payout multiplier,
+    or "cash out" early. Hit a bomb and you lose the bet. Sessions expire
+    after 5 minutes (default) and are settled as a loss. Played via an
+    inline keyboard (buttons). Example: /mines 2000
+
+/bet amount
+    Instant coin-flip bet with a fixed win probability and multiplier
+    (default 50% / 2.0x). Example: /bet 1000
+
+CRIME
+--------------------------------------------------------------------------------
+/rob @user | /rob user_id | reply to a user + /rob
+    Try to rob another user's BANK (not wallet). Uses the reply-based target
+    resolution. Outcome is random:
+        - success: you steal a percentage of the victim's bank, clamped to a
+          minimum/maximum (default 10%, min ₹1, max ₹5,000);
+        - fail:    the police catch you and you get nothing.
+    Either way the 60s cooldown applies. The victim is sent a private
+    notification. Robber and victim both get audit transactions (ROB/ROBBED).
+    Example:  /rob @sangam
+              (reply to a message) /rob
+    You cannot rob yourself, and the victim must have money in their bank.
+
+--------------------------------------------------------------------------------
+PART 2 — ADMIN COMMANDS (owner + sudo)
+--------------------------------------------------------------------------------
+
+Target resolution (for @user arguments everywhere):
+    reply-to message  >  @username  >  numeric user id.
+The target user must already have started the bot.
+
+PERMISSIONS (owner only, private chat only)
+--------------------------------------------------------------------------------
+/addsudo @user
+    Make a user a sudo admin. They get access to every admin command except
+    /addsudo and /rsudo. Example: /addsudo @sangam
+
+/rsudo @user
+    Remove a sudo admin. The owner cannot be removed.
+
+HELP
+--------------------------------------------------------------------------------
+/adminhelp
+    Shows this admin command reference inside Telegram.
+
+ECONOMY — MONEY
+--------------------------------------------------------------------------------
+/give @user amount
+    Add money to a user's wallet. Amount must be > 0. Counts toward the
+    user's total earned and monthly earnings (feeds the monthly ranking).
+    Logs ADMIN_GIVE. Example: /give @sangam 50000
+
+/remove @user amount
+    Take money from a user's wallet. Uses an atomic balance guard, so it can
+    never make a balance negative — fails with "Insufficient balance" if the
+    user cannot cover it. Logs ADMIN_REMOVE.
+
+BANK
+--------------------------------------------------------------------------------
+/setinterest rate
+    Bank interest percentage paid per 24 hours. Valid 0-100. Default 2%.
+    Example: /setinterest 3
+
+/settax rate
+    Withdrawal tax percentage. Valid 0-100. Default 5%. Tax is collected into
+    the pool, not destroyed, and redistributed monthly. Example: /settax 4
+
+/banksettings
+    Show current interest rate, withdrawal tax and tax pool size.
+
+GAMES — FLY
+--------------------------------------------------------------------------------
+/flyset low|medium|high field value
+    Change ONE fly difficulty setting.
+    Fields:  min_mult | max_mult | risk | win_prob | cooldown | min_bet | max_bet
+    Validation:
+        min_mult/max_mult : 0 to 1000, and min_mult <= max_mult
+        risk              : percent, 0 to 100
+        win_prob          : 0.0 to 1.0
+        min_bet/max_bet   : >= 0, and min_bet <= max_bet
+        cooldown          : seconds, >= 0
+    Example: /flyset high win_prob 0.40
+
+    Current defaults per difficulty (cooldown 60s everywhere):
+        low     : min_mult 1.1, max_mult 1.6, risk 20%, win 75%, bet ₹1 - ₹1,000
+        medium  : min_mult 1.5, max_mult 2.5, risk 35%, win 55%, bet ₹1 - ₹2,500
+        high    : min_mult 2.0, max_mult 5.0, risk 50%, win 35%, bet ₹1 - ₹5,000
+
+/flytrap difficulty min_mult max_mult risk win_prob cooldown min_bet max_bet
+    Overwrite ALL settings of one difficulty in a single command (same
+    validation as /flyset).
+    Example: /flytrap high 2.0 6.0 0.5 0.30 60 100 600000
+
+GAMES — BET
+--------------------------------------------------------------------------------
+/betset win_prob multiplier min_bet max_bet [cooldown]
+    Configure the coin-flip game. win_prob is 0.0-1.0, multiplier 0-1000,
+    min_bet <= max_bet, cooldown in seconds (optional).
+    Defaults: win 0.5, multiplier 2.0, bet ₹1 - ₹1,000, cooldown 60s.
+
+GAMES — MINES
+--------------------------------------------------------------------------------
+/minestrap bombs min_reveals min_bet max_bet cooldown duration
+    Mines tuning. Board is 6x6 = 36 tiles.
+        bombs        : 1 to 34
+        min_reveals  : 1 to (36 - bombs)
+        min_bet/max_bet : >= 0, min_bet <= max_bet
+        cooldown     : seconds >= 0
+        duration     : seconds >= 30 (session expiry = auto-loss)
+    Defaults: 5 bombs, 3 min reveals, bet ₹1 - ₹2,000, cooldown 60s,
+    duration 300s (5 minutes).
+
+/minestrap multipliers 1.0,1.2,...
+    Set a custom payout table (comma separated, up to 17 entries — one per
+    reveal; the first entry is the 1st-reveal multiplier).
+
+/minestrap multipliers auto
+    Restore the built-in payout table:
+    1.0, 1.18, 1.4, 1.66, 2.0, 2.45, 3.0, 3.8, 4.9, 6.5, 9.0, 13.0, 19.0,
+    30.0, 50.0, 85.0, 150.0
+
+GAMES — ROB (crime tuning)
+--------------------------------------------------------------------------------
+/robset field value
+    Configure /rob. Fields and defaults:
+        win_prob  : 0.0-1.0 (default 0.50)  chance the heist succeeds
+        percent   : 0-100   (default 10%)   share of victim's bank stolen
+        min       : >= 0    (default ₹1)    minimum stolen amount
+        max       : >= 0    (default ₹5,000) maximum stolen amount (min <= max)
+        cooldown  : seconds (default 60)
+    Example: /robset win_prob 0.60
+
+FREE REWARDS
+--------------------------------------------------------------------------------
+/setreward daily|weekly|monthly amount
+    Set the free-currency claim amount for a reward. Amount must be > 0.
+    Cooldowns are fixed to the reward name (daily = 24h, weekly = 7 days,
+    monthly = 30 days).
+    Defaults: daily ₹500, weekly ₹3,000, monthly ₹12,000.
+    Example: /setreward daily 75000   (₹750)
+
+USERS
+--------------------------------------------------------------------------------
+/freeze @user
+    Freeze a user. They keep their money but cannot spend it (games, pay,
+    rob, withdraw are blocked). Their balance stays intact.
+
+/unfreeze @user
+    Remove a freeze.
+
+/ban @user
+    Full economy ban: the user cannot use any economy command at all.
+    You cannot ban yourself.
+
+/unban @user
+    Remove a ban.
+
+/userinfo @user
+    Full account report: wallet, bank, net worth, total earned/spent,
+    monthly rank, transaction count, and BANNED/FROZEN badges.
+
+STATS
+--------------------------------------------------------------------------------
+/econstats
+    Economy-wide stats: user count, total money in circulation, total banked,
+    tax pool size, total transactions, number of active stock assets.
+
+GROUP CONFIGURATION
+--------------------------------------------------------------------------------
+/setchat [setting] [on|off]          (inside a group)
+/setchat chat_id [setting] [on|off]  (from DM)
+/setchat chat_id                     (view a chat's config from DM)
+/setchat                             (view current group config from inside)
+
+    Per-group feature toggles. Stored centrally in MongoDB; defaults are all
+    ON. Settings:
+        group        — enable/disable the whole bot in that chat
+        economy      — economy commands (/bal /pay /profile /bank /stock etc.)
+        games        — /fly /mines /bet
+        leaderboard  — /leader
+        admin        — admin commands (owner bypasses this toggle)
+
+    When a feature is OFF the bot stays silent (or shows a short notice)
+    for those commands in that group only.
+    Examples:
+        /setchat games off                      (in the group)
+        /setchat -1001234567890 economy off     (from DM)
+        /setchat -1001234567890                 (view from DM)
+
+================================================================================
+END OF COMMAND REFERENCE
+================================================================================
