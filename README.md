@@ -23,6 +23,16 @@ can be added without rewriting the economy engine.
   Top-10 earners using admin-configurable rank percentages (idempotent)
 - **Stock/crypto market** — `/stocklist`, `/stock`, `/buystock`, `/sellstock`, `/portfolio`
   with a volatility-driven price simulator and price history
+- **Asset market** — a second, fully independent market (`/assets`, `/asset`, `/buyasset`,
+  `/sellasset`, `/myassets`, `/assetstats`) with data-driven categories (REAL_ESTATE,
+  VEHICLE, BUSINESS, GOLD, BOND, COMMODITY, LUXURY, COLLECTIBLE, DIGITAL, OTHER),
+  fractional quantities, weighted-average cost accounting, a volatility price engine,
+  buy confirmation keyboards, and admin lifecycle commands (`/addasset` … `/assetowners`)
+  with a full audit log
+- **User resale (listing) market** — Section 62: users list their owned assets for sale
+  (`/listasset`, `/listings`, `/buylisting`, `/mylistings`, `/cancellisting`); every
+  listing has its own unique Listing ID and sales are atomic (claim → transfer →
+  holdings move → sold)
 - **Games** — `/fly` (configurable difficulties), `/mines` (6×6 inline board), `/bet`;
   central game engine enforces cooldowns, bet limits, one-active-game and double-settlement protection;
   mines callbacks verify user + chat + message ownership
@@ -81,7 +91,9 @@ unoitachi-bot/
 │   ├── start.py           # /start /help
 │   ├── economy.py         # /profile /bal /pay /leader
 │   ├── bank.py            # /deposit /withdraw /bank /transactions
-│   ├── stocks.py          # market commands
+│   ├── stocks.py          # stock market commands
+│   ├── assets.py          # asset market + resale market commands
+│   ├── asset_admin.py     # owner/sudo asset administration
 │   ├── games.py           # /fly /mines /bet + mines callbacks
 │   └── admin.py           # owner/sudo administration
 ├── database/              # Motor data-access layer + indexes
@@ -213,10 +225,12 @@ docker run -d --env-file .env --name unoitachi unoitachi-bot
 | Rewards | `/daily` `/weekly` `/monthly` — free currency on 24h / 7d / 30d cooldowns |
 | Bank | `/deposit amount` `/withdraw amount` `/bank` `/transactions` (last 10 transfers) |
 | Market | `/stocklist` `/stock SYMBOL` `/buystock SYMBOL qty` `/sellstock SYMBOL qty` `/portfolio` |
+| Assets | `/assets` `/asset SYMBOL` `/buyasset SYMBOL qty` `/sellasset SYMBOL qty` `/myassets` `/assetstats` |
+| Resale | `/listasset SYMBOL qty price` `/listings [SYMBOL] [page]` `/buylisting LISTING_ID` `/mylistings` `/cancellisting LISTING_ID` |
 | Games | `/fly low\|medium\|high amount` `/mines amount` `/bet amount` |
 | Crime | `/rob @user\|id` — steal from a user's bank (reply-based; 60s cooldown, random police catch) |
 | Owner | `/addsudo @user\|id` `/rsudo @user\|id` — work in DM and groups (reply-based in groups) |
-| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
+| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/addasset SYMBOL name CATEGORY price volatility` `/editasset SYMBOL field value` `/assetset SYMBOL field value` `/assetprice SYMBOL price` `/assetvolatility SYMBOL v` `/rmasset SYMBOL` `/restoreasset SYMBOL` `/assetinfo SYMBOL` `/assetlist [page]` `/assetsearch query` `/assetowners SYMBOL [page]` `/assetadminstats` `/listinginfo LISTING_ID` `/rmlisting LISTING_ID` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
 
 ## Admin system
 
@@ -238,6 +252,8 @@ Decorators: `@owner_only`, `@sudo_only` / `@admin_only` (see `utils/permissions.
 | `transactions` | full financial audit trail | `transaction_id` (unique), `user_id`, `created_at` |
 | `admins` | sudo admins | `user_id` (unique) |
 | `stocks` / `stock_holdings` / `stock_history` | market assets, holdings, price history | `symbol`, `user_id+symbol` |
+| `assets` / `asset_holdings` / `asset_price_history` / `asset_admin_log` | asset types, holdings, price snapshots, admin audit | `symbol` (unique), `user_id+asset_id` (unique), `listing_id` (unique) |
+| `asset_listings` | user resale listings (unique Listing IDs) | `listing_id` (unique), `symbol+status`, `seller_user_id+status` |
 | `game_sessions` / `game_cooldowns` | active games + cooldowns (survive restarts) | `game_id`, `game_cooldowns` TTL |
 | `settings` | admin-configurable economy/game values | `key` (unique) |
 | `bank_settings` | interest & tax rates | `key` (unique) |

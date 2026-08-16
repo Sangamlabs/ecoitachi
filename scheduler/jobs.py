@@ -13,7 +13,12 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from config import config
-from services import interest as interest_service, stocks as stocks_service, tax as tax_service
+from services import (
+    asset_market as asset_market_service,
+    interest as interest_service,
+    stocks as stocks_service,
+    tax as tax_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +36,13 @@ async def _run_stock_tick() -> None:
         await stocks_service.refresh_all_stock_values()
     except Exception:
         logger.exception("stock market job failed")
+
+
+async def _run_asset_tick() -> None:
+    try:
+        await asset_market_service.tick()
+    except Exception:
+        logger.exception("asset market job failed")
 
 
 async def _run_game_cleanup() -> None:
@@ -65,6 +77,14 @@ def build_scheduler() -> AsyncIOScheduler:
         IntervalTrigger(minutes=max(1, config.STOCK_UPDATE_INTERVAL_MINUTES)),
         id="stock_tick",
         name="stock market price updates",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _run_asset_tick,
+        IntervalTrigger(minutes=1),
+        id="asset_tick",
+        name="asset market price updates",
         max_instances=1,
         coalesce=True,
     )

@@ -29,6 +29,18 @@ DEFAULTS: dict[str, Any] = {
         "weekly": {"amount": 300_000, "cooldown": 604_800},
         "monthly": {"amount": 1_200_000, "cooldown": 2_592_000},
     },
+    "asset_market": {
+        "enabled": True,
+        "tick_interval_minutes": 2,
+        "default_volatility": 0.02,
+        "default_fractional_allowed": False,
+        "buy_fee_percent": 0.0,
+        "sell_fee_percent": 0.0,
+        "listing_fee_percent": 0.0,
+        "buy_price_multiplier": 1.0,
+        "sell_price_multiplier": 1.0,
+        "price_history_retention": 500,
+    },
 }
 
 
@@ -100,6 +112,22 @@ async def update_rewards(**changes: dict[str, Any]) -> dict[str, Any]:
         {"key": "global"}, {"$set": {"rewards": rewards}}, upsert=True
     )
     return rewards
+
+
+async def get_asset_market_config() -> dict[str, Any]:
+    """Return the centralized Assets Market configuration."""
+    settings = await get_settings()
+    return dict(settings.get("asset_market", DEFAULTS["asset_market"]))
+
+
+async def update_asset_market_config(**changes: Any) -> dict[str, Any]:
+    """Overwrite one or more Assets Market configuration values."""
+    current = await get_asset_market_config()
+    current.update({k: v for k, v in changes.items() if k in DEFAULTS["asset_market"]})
+    await mongo.db[COLLECTION].update_one(
+        {"key": "global"}, {"$set": {"asset_market": current}}, upsert=True
+    )
+    return current
 
 
 async def update_game_settings(game: str, **changes: Any) -> dict[str, Any]:

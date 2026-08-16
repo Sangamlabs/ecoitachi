@@ -24,6 +24,8 @@ COMMAND_REGISTRY = [
     "handlers.economy",
     "handlers.bank",
     "handlers.stocks",
+    "handlers.assets",
+    "handlers.asset_admin",
     "handlers.games",
     "handlers.rewards",
     "handlers.admin",
@@ -47,6 +49,9 @@ async def main() -> None:
 
     await settings_service.ensure_indexes()
     await group_config_service.ensure_indexes()
+    from services import assets as asset_service
+
+    await asset_service.ensure_market()
 
     app = Client(
         "unoitachi_bot",

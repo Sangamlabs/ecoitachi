@@ -39,12 +39,25 @@ class Mongo:
             logger.info("MongoDB connection closed")
 
     async def _ensure_indexes(self) -> None:
-        from database import admins, bank, games, stocks, transactions, users
+        from database import (
+            admins,
+            asset_holdings,
+            asset_listings,
+            assets,
+            bank,
+            games,
+            stocks,
+            transactions,
+            users,
+        )
 
         await users.ensure_indexes()
         await transactions.ensure_indexes()
         await admins.ensure_indexes()
         await stocks.ensure_indexes()
+        await assets.ensure_indexes()
+        await asset_holdings.ensure_indexes()
+        await asset_listings.ensure_indexes()
         await games.ensure_indexes()
         await bank.ensure_indexes()
 

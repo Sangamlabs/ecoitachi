@@ -133,6 +133,14 @@ async def inc(user_id: int, changes: dict[str, int], *, touch: bool = True) -> N
     await mongo.db[COLLECTION].update_one({"user_id": user_id}, update)
 
 
+async def set_user_field(user_id: int, field: str, value: Any) -> None:
+    """Set one numeric/cached field (e.g. asset_value) on a user."""
+    await mongo.db[COLLECTION].update_one(
+        {"user_id": user_id},
+        {"$set": {field: value, "updated_at": int(time.time())}},
+    )
+
+
 async def aggregate_totals(field: str) -> int:
     """Sum of a numeric field across all users (e.g. wallet, bank)."""
     pipeline = [{"$group": {"_id": None, "total": {"$sum": f"${field}"}}}]

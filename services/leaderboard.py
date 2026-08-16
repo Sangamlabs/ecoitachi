@@ -29,14 +29,22 @@ def categories() -> list[str]:
 
 
 async def net_worth(user: dict[str, Any]) -> int:
-    """Wallet + Bank + live stock value."""
+    """Wallet + Bank + live stock value + live asset value."""
     live_stocks = 0
     holdings = await stocks_db.get_user_holdings(user["user_id"])
     for h in holdings:
         asset = await stocks_db.get_asset(h["symbol"])
         if asset:
             live_stocks += multiply(int(asset.get("price", 0)), h["quantity"])
-    return int(user.get("wallet", 0)) + int(user.get("bank", 0)) + live_stocks
+    from services import assets as asset_service
+
+    live_assets = await asset_service.live_asset_value(user["user_id"])
+    return (
+        int(user.get("wallet", 0))
+        + int(user.get("bank", 0))
+        + live_stocks
+        + live_assets
+    )
 
 
 async def monthly_earnings(user: dict[str, Any]) -> int:

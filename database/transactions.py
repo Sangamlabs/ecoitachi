@@ -39,3 +39,12 @@ async def recent_transfers_by_user(user_id: int, limit: int = 10) -> list[dict[s
 
 async def count_for_user(user_id: int) -> int:
     return await mongo.db[COLLECTION].count_documents({"user_id": user_id})
+
+
+async def sum_amount_by_types(types: list[str]) -> int:
+    pipeline = [
+        {"$match": {"type": {"$in": types}}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+    ]
+    result = await mongo.db[COLLECTION].aggregate(pipeline).to_list(1)
+    return int(result[0]["total"]) if result else 0

@@ -125,6 +125,69 @@ volatility model. You can buy fractional amounts.
 /portfolio
     Your holdings, current value and total profit/loss.
 
+ASSET MARKET (user)
+-------------------------------------------------------------------------------
+Assets are a SECOND market, fully independent from stocks. Examples included
+on first run: LAPT (Luxury Apartment), M5 (BMW M5), GOLD (Gold Reserve,
+fractional), OIL (Crude Oil, fractional), BOND (Government Bond), DIAMOND
+(Rare Diamond). Prices tick on their own volatility schedule.
+
+/assets [page]
+    Asset market overview: every listed asset, price and 24h change.
+    Example: /assets 2
+
+/asset SYMBOL
+    Asset detail: category, price, 24h high/low, volatility, quantity rules,
+    description. Example: /asset GOLD
+
+/buyasset SYMBOL quantity
+    Buy from the market. You are shown a confirmation with the current price
+    and a CONFIRM button; the price is re-checked server-side when you press
+    it (if it changed you must try again — you are never charged a stale
+    price). Logs ASSET_BUY. Example: /buyasset GOLD 0.5
+
+/sellasset SYMBOL quantity
+    Sell owned quantity back to the market at the current sell price.
+    Logs ASSET_SELL. Example: /sellasset GOLD 0.25
+
+/myassets
+    Your asset portfolio: each holding (quantity, unit cost, live value, P/L)
+    plus totals and overall P/L.
+
+/assetstats
+    Market statistics: total/active assets, total market value, trading
+    volume, gainers/losers/flat count.
+
+RESALE MARKET (user) — your own listings
+-------------------------------------------------------------------------------
+You can SELL assets you own to other users at any price you choose. Each
+listing gets its own unique LISTING ID (e.g. LST-1A2B3C4D) — it is never the
+asset's ID. Buyers buy the WHOLE listing (all of its quantity).
+
+/listasset SYMBOL quantity price
+    Create a listing offering quantity of SYMBOL at "price" per unit.
+    Your quantity is reserved in the listing (it stays in your holdings but
+    cannot be sold elsewhere until the listing closes). A configurable
+    listing fee (default 0) is charged. Logs the fee (if any).
+    Example: /listasset GOLD 0.5 82000
+
+/listings [SYMBOL] [page]
+    Browse the active resale market. Optionally filter by SYMBOL and paginate
+    with ◀ ▶ buttons. Example: /listings GOLD
+
+/buylisting LISTING_ID
+    Buy an entire listing. The money moves from your wallet to the seller's
+    wallet and the asset moves to your holdings atomically. Logs
+    ASSET_LISTING_BUY (buyer) and ASSET_LISTING_SALE (seller).
+    You cannot buy your own listing. Example: /buylisting LST-1A2B3C4D
+
+/mylistings
+    All your listings with their current status (active/pending/sold/cancelled).
+
+/cancellisting LISTING_ID
+    Cancel one of your ACTIVE listings; the quantity is released back to you.
+    Example: /cancellisting LST-1A2B3C4D
+
 GAMES
 --------------------------------------------------------------------------------
 All games require money in your WALLET (bet is locked atomically), and every
@@ -297,6 +360,83 @@ MARKET
     Delist an asset from the market. Buying, selling and price ticks stop for
     it immediately. Existing holdings are kept but can no longer be traded.
     Example: /rmstock DOGE
+
+ASSET MARKET (admin)
+-------------------------------------------------------------------------------
+Categories: REAL_ESTATE | VEHICLE | BUSINESS | GOLD | BOND | COMMODITY |
+LUXURY | COLLECTIBLE | DIGITAL | OTHER.
+
+/addasset SYMBOL name CATEGORY base_price volatility
+    List a NEW asset on the market.
+        SYMBOL     : letters/numbers only, shown in UPPERCASE (1-10 chars)
+        name       : display name (may contain spaces)
+        CATEGORY   : one of the categories above
+        base_price : opening price, must be > 0
+        volatility : random-walk strength, 0 to 1
+    The asset gets a unique Asset ID (AST-XXXXXXXX) and is ticked by the
+    scheduler. Logs ADD_ASSET.
+    Example: /addasset VILA Grand Villa REAL_ESTATE 20000000 0.015
+    Optional per-asset rules: /editasset SYMBOL allow_fractional true,
+    min_quantity, max_quantity, quantity_step.
+
+/editasset SYMBOL field value
+    Edit ONE editable field of an asset.
+    Fields: name, description, category, emoji, base_price, price,
+    volatility, min_quantity, max_quantity, quantity_step, allow_fractional,
+    is_tradeable, is_active.
+    Setting base_price also resets the current price. Setting price updates
+    change/change_percent and writes a price-history point. Logs EDIT_ASSET.
+    Example: /editasset VILA name 'Grand Luxury Villa'
+
+/assetset SYMBOL field value
+    Same as /editasset but logged as ASSET_CONFIG_CHANGE (use it for
+    operational tweaks like allow_fractional / is_tradeable).
+
+/assetprice SYMBOL price
+    Manually set an asset's current price. Recomputes change/change_percent
+    and writes a price-history point. Logs MANUAL_PRICE_CHANGE.
+    Example: /assetprice GOLD 82000
+
+/assetvolatility SYMBOL value
+    Set an asset's volatility (0 to 1). Logs VOLATILITY_CHANGE.
+    Example: /assetvolatility GOLD 0.02
+
+/rmasset SYMBOL
+    Delist an asset. Trading and price ticks stop; existing holders keep
+    their holdings but can no longer trade them. Logs REMOVE_ASSET.
+
+/restoreasset SYMBOL
+    Re-list a previously delisted asset (keeps its price history).
+    Logs RESTORE_ASSET.
+
+/assetinfo SYMBOL
+    Full asset detail (works for delisted assets too, shows a DELISTED flag).
+
+/assetlist [page]
+    All assets with price and category (20 per page). Pass "all" as the first
+    argument to include delisted assets.
+
+/assetsearch query
+    Search assets by symbol, name or category.
+    Example: /assetsearch gold
+
+/assetowners SYMBOL [page]
+    Top holders of an asset by current value: username/id, quantity, value.
+
+/assetadminstats
+    Admin market stats: active/total/delisted, holders, holdings, total
+    value, total invested, total P/L, trading volume, top assets by value,
+    most-held assets.
+
+LISTING MARKET (admin)
+-------------------------------------------------------------------------------
+/listinginfo LISTING_ID
+    Full listing report: seller, buyer, status, quantity, unit price, total.
+    Example: /listinginfo LST-1A2B3C4D
+
+/rmlisting LISTING_ID
+    Force-cancel a listing (active or pending). Logs RM_LISTING in the asset
+    audit log.
 
 FREE REWARDS
 --------------------------------------------------------------------------------
