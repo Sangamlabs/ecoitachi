@@ -1,0 +1,17 @@
+[Unit]
+Description=RS Economy Bot
+After=network-online.target mongod.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/rs-economy-bot
+EnvironmentFile=/opt/rs-economy-bot/.env
+ExecStart=/opt/rs-economy-bot/.venv/bin/python bot.py
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target
