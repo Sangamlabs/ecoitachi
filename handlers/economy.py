@@ -200,3 +200,15 @@ def register(app: Client) -> None:
         # Auto-delete after 3 minutes so the tagged leaderboard post stops
         # cluttering the chat for other users.
         schedule_delete(client, sent, delay=LEADERBOARD_AUTO_DELETE_SECONDS)
+
+    @app.on_message(filters.command("topbank") & NOT_CHANNEL)
+    @safe_handler(feature="leaderboard")
+    async def cmd_topbank(client: Client, message: Message):
+        await ensure_user(client, message)
+        top = await leaderboard_service.top_bank(10)
+        entries = [
+            (u["user_id"], leaderboard_service.name_of(u), int(u.get("bank", 0)))
+            for u in top
+        ]
+        sent = await reply_html(client, message, msgs.bank_leaderboard(entries))
+        schedule_delete(client, sent, delay=LEADERBOARD_AUTO_DELETE_SECONDS)

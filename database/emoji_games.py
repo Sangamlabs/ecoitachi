@@ -154,6 +154,22 @@ async def mark_expired(session_id: str) -> bool:
     return result.modified_count == 1
 
 
+async def mark_failed(session_id: str, reason: str = "no_dice_value") -> bool:
+    """Atomically mark an active session failed (guards double-refund)."""
+    result = await mongo.db[SESSIONS].update_one(
+        {"session_id": session_id, "status": "active"},
+        {
+            "$set": {
+                "status": "failed",
+                "outcome": "failed",
+                "failure_reason": reason,
+                "completed_at": int(time.time()),
+            }
+        },
+    )
+    return result.modified_count == 1
+
+
 async def find_expired_duels() -> list[dict[str, Any]]:
     now = int(time.time())
     cursor = mongo.db[SESSIONS].find(

@@ -83,6 +83,17 @@ async def top_monthly(limit: int = 10) -> list[dict[str, Any]]:
     return [doc async for doc in cursor]
 
 
+async def top_bank(limit: int = 10) -> list[dict[str, Any]]:
+    """Return the top-N users by bank balance."""
+    cursor = (
+        mongo.db[users_db.COLLECTION]
+        .find({"is_banned": False})
+        .sort([("bank", -1)])
+        .limit(limit)
+    )
+    return [doc async for doc in cursor]
+
+
 def name_of(user: dict[str, Any]) -> str:
     if user.get("username"):
         return user["username"]

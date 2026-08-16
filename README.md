@@ -43,11 +43,12 @@ can be added without rewriting the economy engine.
 - **Games** — `/fly` (configurable difficulties), `/mines` (6×6 inline board), `/bet`;
   central game engine enforces cooldowns, bet limits, one-active-game and double-settlement protection;
   mines callbacks verify user + chat + message ownership
-- **Emoji games** — real Telegram animated dice (`/sball /sarrow /sbasketball` solo,
-  `/ball /arrow /basketball` + `/join CODE` 1v1 duels): the bot sends the emoji, waits,
-  then edits the same message with the actual rolled result; single-player win rules and
-  multipliers are per-game configurable; duels lock both bets, pay the winner `2x`, refund
-  both on a draw, and auto-refund the creator when a lobby expires (admin: `/emojiset`,
+- **Emoji games** — real Telegram animated dice (`/sball /sarrow /sbasketball /sfootball /sslot /sdice` solo,
+  `/ball /arrow /basketball /football /slot /dice` + `/join CODE` 1v1 duels): the bot sends the
+  emoji, waits ~1s, then sends a NEW HTML result message (the dice is never edited); single-player
+  win rules and multipliers are per-game configurable; duels roll ONE emoji and resolve via range
+  split (upper half = creator wins, lower = joiner wins, middle = draw); locks both bets, pays
+  winner `2x`, refunds both on draw, auto-refunds creator on lobby expiry (admin: `/emojiset`,
   `/emojitrap`, `/emojigameinfo`, `/emojigames`)
 - **Blackjack** — `/blackjack amount` USER VS BOT, exactly two cards each (A=11/1,
   J/Q/K=10), highest total wins, ties refund the bet (admin: `/bjset`, `/bjinfo`)
@@ -109,7 +110,7 @@ unoitachi-bot/
 ├── config.py              # env-based configuration
 ├── handlers/              # thin command handlers
 │   ├── start.py           # /start /help
-│   ├── economy.py         # /profile /bal /pay /leader
+│   ├── economy.py         # /profile /bal /pay /leader /topbank
 │   ├── bank.py            # /deposit /withdraw /bank /transactions
 │   ├── stocks.py          # stock market commands
 │   ├── assets.py          # asset market + resale market commands
@@ -244,7 +245,7 @@ docker run -d --env-file .env --name unoitachi unoitachi-bot
 
 | Group | Commands |
 | --- | --- |
-| Economy | `/start` `/profile` `/bal [@user\|id]` `/pay @user\|id amount` `/leader` — reply-based `/bal` `/pay` work in every chat |
+| Economy | `/start` `/profile` `/bal [@user\|id]` `/pay @user\|id amount` `/leader` `/topbank` — reply-based `/bal` `/pay` work in every chat |
 | Rewards | `/daily` `/weekly` `/monthly` — free currency on 24h / 7d / 30d cooldowns |
 | Promo Codes | Redeem by simply **typing an active promo code** as a normal message in DM/groups — rewards (currency/stocks/assets) are granted instantly; admins manage with `/addpromo` `/rmpromo` `/editpromo` `/promoinfo` `/promolist` `/promostats` |
 | Daily Income | `/interestbank` `/interestasset` `/stockinterest` — claim daily income (unclaimed days stack) |
@@ -253,7 +254,7 @@ docker run -d --env-file .env --name unoitachi unoitachi-bot
 | Assets | `/assets` `/asset SYMBOL` `/assetsinfo [SYMBOL]` `/buyasset SYMBOL qty` `/sellasset SYMBOL qty` `/myassets` `/assetstats` |
 | Resale | `/listasset SYMBOL qty price` `/listings [SYMBOL] [page]` `/buylisting LISTING_ID` `/mylistings` `/cancellisting LISTING_ID` `/rmlisting LISTING_ID` (own listings only) |
 | Games | `/fly low\|medium\|high amount` `/mines amount` `/bet amount` |
-| Emoji Games | `/sball amount` `/sarrow amount` `/sbasketball amount` `/ball amount` `/arrow amount` `/basketball amount` `/join CODE` `/blackjack amount` |
+| Emoji Games | `/sball amount` `/sarrow amount` `/sbasketball amount` `/sfootball amount` `/sslot amount` `/sdice amount` `/ball amount` `/arrow amount` `/basketball amount` `/football amount` `/slot amount` `/dice amount` `/join CODE` `/blackjack amount` |
 | Crime | `/rob @user\|id` — steal from a user's bank (reply-based; 60s cooldown, random police catch) |
 | Owner | `/addsudo @user\|id` `/rsudo @user\|id` — work in DM and groups (reply-based in groups) |
 | Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/dtax` `/addtax system rate` `/taxinfo` `/track TX_ID` `/setincome bank\|asset\|stock rate` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/emojiset GAME field value` `/emojitrap GAME key=value ...` `/emojigameinfo GAME` `/emojigames` `/bjset field value` `/bjinfo` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/addasset SYMBOL name CATEGORY price volatility` `/editasset SYMBOL field value` `/assetset SYMBOL field value` `/assetprice SYMBOL price` `/assetvolatility SYMBOL v` `/rmasset SYMBOL` `/restoreasset SYMBOL` `/assetinfo SYMBOL` `/assetlist [page]` `/assetsearch query` `/assetowners SYMBOL [page]` `/assetadminstats` `/listinginfo LISTING_ID` `/forcelisting LISTING_ID` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` `/addpromo CODE EXPIRY LIMIT REWARD [REWARD...]` `/rmpromo CODE` `/editpromo CODE FIELD VALUE` `/promoinfo CODE` `/promolist [status] [page]` `/promostats CODE` |

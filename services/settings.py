@@ -11,6 +11,13 @@ from typing import Any
 
 from database.mongo import mongo
 
+DEFAULT_SLOT_PAYOUTS: dict[str, dict[str, int]] = {
+    "BAR": {"triple": 64, "pair": 4},
+    "GRAPE": {"triple": 32, "pair": 2},
+    "LEMON": {"triple": 16, "pair": 2},
+    "SEVEN": {"triple": 8, "pair": 2},
+}
+
 COLLECTION = "settings"
 
 DEFAULTS: dict[str, Any] = {
@@ -92,6 +99,43 @@ DEFAULTS: dict[str, Any] = {
             "win_target": 4,
             "multiplier": 1.5,
             "lobby_expiry": 300,
+        },
+        "football": {
+            "enabled": True,
+            "single_enabled": True,
+            "duel_enabled": True,
+            "cooldown": 60,
+            "minimum_bet": 100,
+            "maximum_bet": 100_000,
+            "win_rule": "eq",
+            "win_target": 5,
+            "multiplier": 1.5,
+            "lobby_expiry": 300,
+        },
+        "dice": {
+            "enabled": True,
+            "single_enabled": True,
+            "duel_enabled": True,
+            "cooldown": 60,
+            "minimum_bet": 100,
+            "maximum_bet": 100_000,
+            "win_rule": "eq",
+            "win_target": 6,
+            "multiplier": 2.0,
+            "lobby_expiry": 300,
+        },
+        "slot": {
+            "enabled": True,
+            "single_enabled": True,
+            "duel_enabled": True,
+            "cooldown": 60,
+            "minimum_bet": 100,
+            "maximum_bet": 100_000,
+            "win_rule": "eq",
+            "win_target": 64,
+            "multiplier": 1.0,
+            "lobby_expiry": 300,
+            "slot_payouts": DEFAULT_SLOT_PAYOUTS,
         },
     },
     "blackjack": {

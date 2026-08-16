@@ -69,6 +69,9 @@ ECONOMY
 /leader
     Top-10 net-worth leaderboard (wallet + bank + live stock value).
 
+/topbank
+    Top-10 bank balance leaderboard (highest bank deposits only).
+
 FREE REWARDS
 --------------------------------------------------------------------------------
 /daily     Claim free money. Default ₹500, cooldown 24h.
@@ -245,32 +248,43 @@ game. A failed bet only loses the bet; no money is ever duplicated.
 EMOJI GAMES (Telegram animated dice)
 --------------------------------------------------------------------------------
 Solo rounds use Telegram's real animated dice — the bot sends the emoji, waits
-one second, then edits the same message with the actual rolled result. Win
-rules and multipliers are admin-configurable per game (defaults below).
+~1 second, then sends a NEW HTML message with the result (the dice message is
+never edited). Win rules and multipliers are admin-configurable per game
+(defaults below).
 
 Games / defaults:
     🎳 ball      1-6, WIN when roll >= 5 (gte), multiplier 1.0x
     🎯 arrow     1-6, WIN when roll == 6 (eq),  multiplier 1.5x
     🏀 basketball 1-5, WIN when roll >= 4 (gte), multiplier 1.5x
+    ⚽ football   1-5, WIN when roll == 5 (eq),  multiplier 1.5x
+    🎰 slot      1-64, pays on matching reels (see /emojigameinfo slot)
+    🎲 dice      1-6, WIN when roll == 6 (eq),  multiplier 2.0x
 
 Single-player (bet locked at start, WIN = bet + bet*multiplier, LOSS = 0):
     /sball amount
     /sarrow amount
     /sbasketball amount
+    /sfootball amount
+    /sslot amount
+    /sdice amount
     Example: /sball 500
 
 Duels (1v1, 4-digit Game ID lobby):
     /ball amount      -> creates a lobby with a 4-digit code
     /arrow amount
     /basketball amount
+    /football amount
+    /slot amount
+    /dice amount
     /join CODE        -> join the lobby; both players' bets are locked
-    The creator and joiner each roll the same emoji. Higher roll wins the pot
-    (2x the bet); equal rolls = DRAW and both bets are refunded (no money is
-    created). Lobbies expire after 5 minutes (default) and the creator's bet
-    is auto-refunded.
+    A SINGLE emoji is rolled. The game's value range is split: upper half wins
+    for the creator, lower half for the joiner; the exact middle value draws
+    (only on odd-sized ranges like 1-5). Winner takes the pot (2x the bet);
+    draw refunds both bets. Lobbies expire after 5 minutes (default) and the
+    creator's bet is auto-refunded.
     Example:
         Player A: /ball 1000   -> Game ID: 4821
-        Player B: /join 4821   -> both roll; winner takes ₹2,000.
+        Player B: /join 4821   -> one roll; winner takes ₹2,000.
 
 Cooldowns are per game and per user; for a duel BOTH players must be off
 cooldown. You can only have ONE active emoji game at a time.

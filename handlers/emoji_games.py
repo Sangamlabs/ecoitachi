@@ -1,15 +1,20 @@
 """Emoji game handlers: single-player and PvP duel rounds.
 
-Every round sends Telegram's animated emoji first, waits, then reads the
-*actual* dice value from the sent message and edits that same message with
-the outcome.  The engine never fakes a random number.
+Every round sends Telegram's animated emoji first, waits ~1 second, then reads
+the *actual* dice value from the sent message.  The central
+:func:`services.emoji_games.process_emoji_result` validates the value,
+resolves the game, settles the session, records transactions and sends the
+result as a NEW HTML message — the native dice message is never edited.
+
+Duels now roll a SINGLE emoji (not one per player).  The duel resolver splits
+the game's value range: upper half wins for the creator, lower half for the
+joiner, exact middle draws (odd ranges only).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
 
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -27,7 +32,7 @@ from services.emoji_games import (
 )
 from utils import messages as msgs
 from utils.money import MoneyError
-from utils.sender import edit_html, reply_html
+from utils.sender import reply_html
 from utils.validators import parse_amount_or_error
 
 logger = logging.getLogger(__name__)
@@ -58,10 +63,6 @@ def _user_name(message: Message) -> tuple[str | None, str | None]:
     if user is None:
         return None, None
     return user.username, user.first_name
-
-
-def _roll_text(emoji: str, name: str, result: int) -> str:
-    return f"<b>🎲</b> {emoji} rolled <b>{result}</b>"
 
 
 def register(app: Client) -> None:
@@ -97,32 +98,12 @@ def register(app: Client) -> None:
             return
 
         dice = await client.send_dice(message.chat.id, emoji=game_def.emoji)
-        if dice is None:
-            await reply_html(client, message, msgs.error("Could not send the dice. Try again."))
-            return
-        await emoji_db.set_message(started["session_id"], dice.id)
+        if dice is not None:
+            await emoji_db.set_message(started["session_id"], dice.id)
         await asyncio.sleep(1)
-        result = dice.dice.value if dice.dice else 0
-
-        try:
-            outcome = await emoji_service.settle_single(started["session_id"], result)
-        except EmojiGameError as exc:
-            await _reply_game_error(client, message, exc)
-            return
-
-        if outcome is None:
-            text = f"<b>{game_def.emoji} {game_def.label}</b>\nRolled <b>{result}</b>"
-        else:
-            text = msgs.emoji_single_result(
-                game_def.label,
-                game_def.emoji,
-                outcome["result"],
-                outcome["outcome"],
-                outcome["bet"],
-                outcome["payout"],
-                outcome["tx_id"],
-            )
-        await edit_html(client, dice, text)
+        await emoji_service.process_emoji_result(
+            client, dice, message, started["session_id"]
+        )
 
     @app.on_message(filters.command(DUEL_COMMAND_NAMES) & NOT_CHANNEL)
     @safe_handler(feature="games")
@@ -162,7 +143,7 @@ def register(app: Client) -> None:
                 game_def.emoji,
                 lobby["bet"],
                 lobby["game_id"],
-                max(1, lobby["expires_at"] - int(time.time())),
+                max(1, lobby["expires_at"] - int(__import__("time").time())),
             ),
         )
 
@@ -198,51 +179,11 @@ def register(app: Client) -> None:
 
         game_type = joined["game_type"]
         game_def = get_game_def(game_type)
-        p1_name = joined["player1_name"]
-        p2_name = joined["player2_name"]
 
-        p1_dice = await client.send_dice(message.chat.id, emoji=game_def.emoji)
+        dice = await client.send_dice(message.chat.id, emoji=game_def.emoji)
+        if dice is not None:
+            await emoji_db.set_message(joined["session_id"], dice.id)
         await asyncio.sleep(1)
-        r1 = p1_dice.dice.value if p1_dice and p1_dice.dice else None
-        p2_dice = await client.send_dice(message.chat.id, emoji=game_def.emoji)
-        await asyncio.sleep(1)
-        r2 = p2_dice.dice.value if p2_dice and p2_dice.dice else None
-
-        if r1 is None or r2 is None:
-            await reply_html(client, message, msgs.error("Could not complete the duel. Try again."))
-            return
-
-        try:
-            outcome = await emoji_service.settle_duel(joined["session_id"], r1, r2)
-        except EmojiGameError as exc:
-            await _reply_game_error(client, message, exc)
-            return
-
-        if outcome is None:
-            if p1_dice is not None:
-                await edit_html(client, p1_dice, _roll_text(game_def.emoji, p1_name, r1))
-            if p2_dice is not None:
-                await edit_html(client, p2_dice, _roll_text(game_def.emoji, p2_name, r2))
-            return
-
-        winner = None
-        if outcome["winner_id"] is not None:
-            if outcome["winner_id"] == joined["player1_id"]:
-                winner = (p1_name, outcome["result1"])
-            else:
-                winner = (p2_name, outcome["result2"])
-
-        result_text = msgs.emoji_duel_result(
-            game_def.label,
-            game_def.emoji,
-            (p1_name, outcome["result1"]),
-            (p2_name, outcome["result2"]),
-            winner,
-            outcome["bet"],
-            outcome["payout"],
-            None,
+        await emoji_service.process_emoji_result(
+            client, dice, message, joined["session_id"]
         )
-        if p1_dice is not None:
-            await edit_html(client, p1_dice, _roll_text(game_def.emoji, p1_name, outcome["result1"]))
-        if p2_dice is not None:
-            await edit_html(client, p2_dice, result_text)

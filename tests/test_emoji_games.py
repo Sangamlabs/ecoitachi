@@ -34,7 +34,7 @@ from utils.cooldown import cooldown_manager  # noqa: E402
 
 A, B, ADMIN = 9501, 9502, 1
 
-GAMES = ("ball", "arrow", "basketball")
+GAMES = ("ball", "arrow", "basketball", "football", "dice", "slot")
 
 
 def mongo_available() -> bool:
@@ -119,15 +119,30 @@ def test_evaluate_single_invalid_result():
         emoji_service.evaluate_single("basketball", 7, 10_000, config)
 
 
-def test_evaluate_duel_outcomes():
-    assert emoji_service.evaluate_duel(5, 3, 10_000)["outcome"] == "player1"
-    assert emoji_service.evaluate_duel(2, 6, 10_000)["outcome"] == "player2"
-    draw = emoji_service.evaluate_duel(4, 4, 10_000)
-    assert draw["outcome"] == "draw"
-    assert draw["payout"] == 0
-    p1 = emoji_service.evaluate_duel(6, 1, 10_000)
-    assert p1["payout"] == 20_000
-    assert p1["profit"] == 10_000
+def test_resolve_duel_result_thresholds():
+    from services.emoji_games import get_game_def, resolve_duel_result
+    ball = get_game_def("ball")  # 1-6
+    # P1 wins upper half (4-6)
+    res = resolve_duel_result(ball, 6, (A, "P1"), (B, "P2"), 10_000, {})
+    assert res["outcome"] == "player1"
+    assert res["winner_id"] == A
+    res = resolve_duel_result(ball, 1, (A, "P1"), (B, "P2"), 10_000, {})
+    assert res["outcome"] == "player2"
+    assert res["winner_id"] == B
+    # No draw on even range
+    res = resolve_duel_result(ball, 3, (A, "P1"), (B, "P2"), 10_000, {})
+    assert res["outcome"] == "player2"
+
+    basketball = get_game_def("basketball")  # 1-5
+    # Draw on middle (3)
+    res = resolve_duel_result(basketball, 3, (A, "P1"), (B, "P2"), 10_000, {})
+    assert res["outcome"] == "draw"
+    # P1 wins upper half (4-5)
+    res = resolve_duel_result(basketball, 5, (A, "P1"), (B, "P2"), 10_000, {})
+    assert res["outcome"] == "player1"
+    # P2 wins lower half (1-2)
+    res = resolve_duel_result(basketball, 1, (A, "P1"), (B, "P2"), 10_000, {})
+    assert res["outcome"] == "player2"
 
 
 # ---------- single player flow ----------
@@ -213,25 +228,41 @@ async def test_duel_p1_wins():
     lobby = await emoji_service.create_duel(A, "ball", 10_000, username="user_a", name="User A")
     joined = await emoji_service.join_duel(lobby["game_id"], B, username="user_b", name="User B")
     assert (await _wallet(B)) == 990_000
-    outcome = await emoji_service.settle_duel(joined["session_id"], 6, 2)
+    # ball range 1-6, upper half 4-6 -> P1 wins
+    outcome = await emoji_service.settle_duel(joined["session_id"], 6)
     assert outcome["outcome"] == "player1"
     assert outcome["payout"] == 20_000
     assert outcome["winner_id"] == A
     assert (await _wallet(A)) == 1_000_000 - 10_000 + 20_000
     assert (await _wallet(B)) == 990_000
     # idempotent
-    assert await emoji_service.settle_duel(joined["session_id"], 6, 2) is None
+    assert await emoji_service.settle_duel(joined["session_id"], 6) is None
     assert (await _wallet(A)) == 1_000_000 - 10_000 + 20_000
     txs_b = await tx_service.get_recent(B, 10)
     assert any(t["type"] == tx_service.EMOJI_DUEL_LOSS for t in txs_b)
 
 
+async def test_duel_p2_wins():
+    await _fund(A, 1_000_000)
+    await _fund(B, 1_000_000)
+    lobby = await emoji_service.create_duel(A, "ball", 10_000, username="user_a", name="User A")
+    joined = await emoji_service.join_duel(lobby["game_id"], B, username="user_b", name="User B")
+    # ball range 1-6, lower half 1-3 -> P2 wins
+    outcome = await emoji_service.settle_duel(joined["session_id"], 2)
+    assert outcome["outcome"] == "player2"
+    assert outcome["payout"] == 20_000
+    assert outcome["winner_id"] == B
+    assert (await _wallet(B)) == 1_000_000 - 10_000 + 20_000
+    assert (await _wallet(A)) == 990_000
+
+
 async def test_duel_draw_refunds_both():
     await _fund(A, 1_000_000)
     await _fund(B, 1_000_000)
-    lobby = await emoji_service.create_duel(A, "ball", 10_000)
+    # basketball range 1-5, middle 3 -> draw
+    lobby = await emoji_service.create_duel(A, "basketball", 10_000)
     joined = await emoji_service.join_duel(lobby["game_id"], B)
-    outcome = await emoji_service.settle_duel(joined["session_id"], 4, 4)
+    outcome = await emoji_service.settle_duel(joined["session_id"], 3)
     assert outcome["outcome"] == "draw"
     assert (await _wallet(A)) == 1_000_000
     assert (await _wallet(B)) == 1_000_000
@@ -338,3 +369,113 @@ async def test_system_taxes_include_emoji_and_blackjack():
     taxes = await settings_service.get_system_taxes()
     assert "emoji" in taxes
     assert "blackjack" in taxes
+
+
+# ---------- new games single-player ----------
+
+
+async def test_football_single_win():
+    await _fund(A, 1_000_000)
+    await cooldown_manager.clear("football", A)
+    started = await emoji_service.start_single(A, "football", 10_000)
+    # football win on 5 (eq)
+    outcome = await emoji_service.settle_single(started["session_id"], 5)
+    assert outcome["won"] is True
+    assert outcome["payout"] == 25_000  # 10_000 + 10_000*1.5
+
+
+async def test_football_single_loss():
+    await _fund(A, 1_000_000)
+    await cooldown_manager.clear("football", A)
+    started = await emoji_service.start_single(A, "football", 10_000)
+    outcome = await emoji_service.settle_single(started["session_id"], 3)
+    assert outcome["won"] is False
+    assert outcome["payout"] == 0
+
+
+async def test_dice_single_win():
+    await _fund(A, 1_000_000)
+    await cooldown_manager.clear("dice", A)
+    started = await emoji_service.start_single(A, "dice", 10_000)
+    # dice win on 6 (eq)
+    outcome = await emoji_service.settle_single(started["session_id"], 6)
+    assert outcome["won"] is True
+    assert outcome["payout"] == 30_000  # 10_000 + 10_000*2.0
+
+
+async def test_slot_single_loss():
+    await _fund(A, 1_000_000)
+    await cooldown_manager.clear("slot", A)
+    started = await emoji_service.start_single(A, "slot", 10_000)
+    # value 7 = BAR GRAPE LEMON (no matches) -> loss
+    outcome = await emoji_service.settle_single(started["session_id"], 7)
+    assert outcome["won"] is False
+
+
+# ---------- refund on invalid dice ----------
+
+
+async def test_refund_failed_single_session():
+    await _fund(A, 1_000_000)
+    started = await emoji_service.start_single(A, "ball", 10_000)
+    assert (await _wallet(A)) == 990_000
+    # Simulate failed dice (no value) by calling refund_failed_session
+    result = await emoji_service.refund_failed_session(started["session_id"], "no_dice_value")
+    assert result is not None
+    assert result["refunded"] == 10_000
+    assert result["players"] == [A]
+    assert (await _wallet(A)) == 1_000_000
+    txs = await tx_service.get_recent(A, 10)
+    assert any(t["type"] == tx_service.EMOJI_GAME_REFUND for t in txs)
+
+
+async def test_refund_failed_duel_session():
+    await _fund(A, 1_000_000)
+    await _fund(B, 1_000_000)
+    lobby = await emoji_service.create_duel(A, "ball", 10_000)
+    joined = await emoji_service.join_duel(lobby["game_id"], B)
+    assert (await _wallet(A)) == 990_000
+    assert (await _wallet(B)) == 990_000
+    # Simulate failed dice
+    result = await emoji_service.refund_failed_session(joined["session_id"], "invalid_dice_value")
+    assert result is not None
+    assert result["refunded"] == 20_000
+    assert set(result["players"]) == {A, B}
+    assert (await _wallet(A)) == 1_000_000
+    assert (await _wallet(B)) == 1_000_000
+    txs = await tx_service.get_recent(A, 10)
+    assert any(t["type"] == tx_service.EMOJI_DUEL_REFUND for t in txs)
+
+
+# ---------- slot resolver ----------
+
+
+def test_slot_resolver_triple_bar():
+    from services.emoji_games import SlotResultResolver, get_game_def
+    game_def = get_game_def("slot")
+    config = {"slot_payouts": {"BAR": {"triple": 64, "pair": 4}}}
+    # value 1 = BAR BAR BAR
+    res = SlotResultResolver.resolve(game_def, 1, 10_000, config)
+    assert res["won"] is True
+    assert res["multiplier"] == 64
+    assert res["payout"] == 10_000 + 640_000
+
+
+def test_slot_resolver_pair():
+    from services.emoji_games import SlotResultResolver, get_game_def
+    game_def = get_game_def("slot")
+    config = {"slot_payouts": {"BAR": {"triple": 64, "pair": 4}}}
+    # value 2 = BAR BAR GRAPE -> pair BAR
+    res = SlotResultResolver.resolve(game_def, 2, 10_000, config)
+    assert res["won"] is True
+    assert res["multiplier"] == 4
+    assert res["payout"] == 10_000 + 40_000
+
+
+def test_slot_resolver_loss():
+    from services.emoji_games import SlotResultResolver, get_game_def
+    game_def = get_game_def("slot")
+    # BAR GRAPE LEMON (no match) -> value 7
+    res = SlotResultResolver.resolve(game_def, 7, 10_000, {})
+    assert res["won"] is False
+    assert res["payout"] == 0
