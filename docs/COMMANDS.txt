@@ -605,6 +605,56 @@ FREE REWARDS
     Defaults: daily ₹500, weekly ₹3,000, monthly ₹12,000.
     Example: /setreward daily 75000   (₹750)
 
+PROMO CODES
+--------------------------------------------------------------------------------
+Promo codes let admins give away currency, stocks and assets. Users redeem a
+promo by simply TYPING the code as a normal text message in DM, groups or
+supergroups — there is no /redeem command. Detection runs automatically; the
+code must appear as a 3-20 letter/number token in the message.
+
+/addpromo CODE EXPIRY LIMIT REWARD [REWARD...]
+    Create a promo code. Owner/sudo only.
+    CODE:    3-20 letters/numbers (case-insensitive, non-alphanumerics ignored).
+    EXPIRY:  lifetime/unlimited/forever, or a number + min/hr/day/week/month/
+             year, e.g. 10min, 2hr, 7days, 30days, 1week, 2months.
+    LIMIT:   total redemption limit, or 'unlimited'.
+    REWARD:  one or more tokens, one per reward:
+                 rs:AMOUNT            currency, e.g. rs:500 = ₹500
+                 stock:SYMBOL:QTY     stock holdings, e.g. stock:BTC:0.01
+                 asset:ASSET_ID:QTY   asset holdings, e.g. asset:AST-00021:1
+    Every user can redeem a promo at most once (per-user limit is always 1).
+    Examples:
+        /addpromo ITACHI500 7days 100 rs:500
+        /addpromo MEGA 30days 500 rs:100 stock:BTC:0.01 asset:AST-00021:1
+        /addpromo VIP lifetime unlimited rs:500 stock:BTC:0.1 asset:AST-00021:2
+
+/rmpromo CODE
+    Disable a promo. Redemption history is kept; the code stops working.
+
+/editpromo CODE FIELD VALUE [VALUE...]
+    Edit an existing promo without touching redemption history.
+    Fields:
+        expiry VALUE     new expiry, e.g. 7days or lifetime
+        limit VALUE      new total limit, e.g. 50 or unlimited
+        active on|off    enable/disable the promo
+        reward TOKENS    replace the whole reward bundle
+    Example: /editpromo ITACHI500 limit 500
+             /editpromo ITACHI500 reward rs:1000 stock:BTC:0.02
+
+/promoinfo CODE
+    Promo details: status, expiry (with time left), uses, per-user limit and
+    the reward bundle.
+
+/promolist [status] [page]
+    List promos newest first. status: active (default view filters with 'all'
+    accepted too), expired, inactive, or all. 10 per page.
+
+/promostats CODE
+    Redemption statistics: total redemptions, unique users, remaining uses,
+    totals given per reward type and the last redemption time.
+
+    Expired promos are deactivated automatically every minute.
+
 USERS
 --------------------------------------------------------------------------------
 /freeze @user

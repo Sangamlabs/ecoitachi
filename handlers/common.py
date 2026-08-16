@@ -12,6 +12,8 @@ from pyrogram.types import Message
 from database import users as users_db
 from services.economy import EconomyError, BannedUser, FrozenUser, InsufficientBalance
 from services.game_engine import GameCooldownError, GameError, GameInProgress, NoActiveGame
+from services.promo_rewards import PromoRewardError
+from services.promos import PromoError
 from utils.chat import check_gate
 from utils.messages import error
 from utils.money import MoneyError
@@ -60,6 +62,8 @@ def safe_handler(func=None, *, feature: str | None = None) -> Callable:
             except GameInProgress as exc:
                 await reply_html(client, message, error(str(exc)))
             except (EconomyError, MoneyError, GameError, NoActiveGame) as exc:
+                await reply_html(client, message, error(str(exc)))
+            except (PromoError, PromoRewardError) as exc:
                 await reply_html(client, message, error(str(exc)))
             except FrozenUser:
                 await reply_html(client, message, error("Your account is frozen. Contact an admin."))

@@ -55,6 +55,11 @@ can be added without rewriting the economy engine.
   (clamped min/max) with a random police-catch failure chance and the shared 60s cooldown
 - **Free rewards** — `/daily`, `/weekly`, `/monthly` claim admin-configurable amounts
   on 24h / 7d / 30d cooldowns
+- **Promo codes** — admins create multi-reward promos (`/addpromo` with currency/stock/asset
+  rewards, expiry and a total redemption limit); users redeem by simply typing the code as a
+  normal message in DM or groups — an in-memory cache pre-filters detection and redemption is
+  atomic (per-user unique, total-limit slot reservation, full rollback on any failure) with
+  audit stats via `/promostats`; expired promos auto-deactivate every minute
 - **Owner + Sudo admin system** — numeric-ID based permission service with decorators;
   Telegram group-admin status is separate from the bot's admin hierarchy; `/adminhelp`
   lists every admin command for owner and sudo
@@ -241,6 +246,7 @@ docker run -d --env-file .env --name unoitachi unoitachi-bot
 | --- | --- |
 | Economy | `/start` `/profile` `/bal [@user\|id]` `/pay @user\|id amount` `/leader` — reply-based `/bal` `/pay` work in every chat |
 | Rewards | `/daily` `/weekly` `/monthly` — free currency on 24h / 7d / 30d cooldowns |
+| Promo Codes | Redeem by simply **typing an active promo code** as a normal message in DM/groups — rewards (currency/stocks/assets) are granted instantly; admins manage with `/addpromo` `/rmpromo` `/editpromo` `/promoinfo` `/promolist` `/promostats` |
 | Daily Income | `/interestbank` `/interestasset` `/stockinterest` — claim daily income (unclaimed days stack) |
 | Bank | `/deposit amount` `/withdraw amount` `/bank` `/transactions` (last 10 transfers) |
 | Market | `/stocklist` `/stock SYMBOL` `/buystock SYMBOL qty` `/sellstock SYMBOL qty` `/portfolio` |
@@ -250,7 +256,7 @@ docker run -d --env-file .env --name unoitachi unoitachi-bot
 | Emoji Games | `/sball amount` `/sarrow amount` `/sbasketball amount` `/ball amount` `/arrow amount` `/basketball amount` `/join CODE` `/blackjack amount` |
 | Crime | `/rob @user\|id` — steal from a user's bank (reply-based; 60s cooldown, random police catch) |
 | Owner | `/addsudo @user\|id` `/rsudo @user\|id` — work in DM and groups (reply-based in groups) |
-| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/dtax` `/addtax system rate` `/taxinfo` `/track TX_ID` `/setincome bank\|asset\|stock rate` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/emojiset GAME field value` `/emojitrap GAME key=value ...` `/emojigameinfo GAME` `/emojigames` `/bjset field value` `/bjinfo` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/addasset SYMBOL name CATEGORY price volatility` `/editasset SYMBOL field value` `/assetset SYMBOL field value` `/assetprice SYMBOL price` `/assetvolatility SYMBOL v` `/rmasset SYMBOL` `/restoreasset SYMBOL` `/assetinfo SYMBOL` `/assetlist [page]` `/assetsearch query` `/assetowners SYMBOL [page]` `/assetadminstats` `/listinginfo LISTING_ID` `/forcelisting LISTING_ID` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
+| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/dtax` `/addtax system rate` `/taxinfo` `/track TX_ID` `/setincome bank\|asset\|stock rate` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/emojiset GAME field value` `/emojitrap GAME key=value ...` `/emojigameinfo GAME` `/emojigames` `/bjset field value` `/bjinfo` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/addasset SYMBOL name CATEGORY price volatility` `/editasset SYMBOL field value` `/assetset SYMBOL field value` `/assetprice SYMBOL price` `/assetvolatility SYMBOL v` `/rmasset SYMBOL` `/restoreasset SYMBOL` `/assetinfo SYMBOL` `/assetlist [page]` `/assetsearch query` `/assetowners SYMBOL [page]` `/assetadminstats` `/listinginfo LISTING_ID` `/forcelisting LISTING_ID` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` `/addpromo CODE EXPIRY LIMIT REWARD [REWARD...]` `/rmpromo CODE` `/editpromo CODE FIELD VALUE` `/promoinfo CODE` `/promolist [status] [page]` `/promostats CODE` |
 
 ## Admin system
 
@@ -278,6 +284,7 @@ Decorators: `@owner_only`, `@sudo_only` / `@admin_only` (see `utils/permissions.
 | `settings` | admin-configurable economy/game values | `key` (unique) |
 | `bank_settings` | interest & tax rates | `key` (unique) |
 | `tax_pool` / `tax_distributions` | tax pool + monthly distribution records | — |
+| `promo_codes` / `promo_redemptions` | promo codes with atomic total-limit slots + per-user redemption records | `normalized_code` (unique), `promo_id+user_id` (unique) |
 
 ## Money handling
 

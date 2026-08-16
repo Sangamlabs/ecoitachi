@@ -10,6 +10,8 @@ Message content is kept separate from the send logic so future features
 
 from __future__ import annotations
 
+import math
+import time
 from html import escape
 from typing import Any
 
@@ -114,6 +116,9 @@ def help_text() -> str:
         f"<code>/daily</code> — free currency every 24h\n"
         f"<code>/weekly</code> — free currency every 7 days\n"
         f"<code>/monthly</code> — free currency every 30 days\n\n"
+        f"<b>🎁 Promo Codes</b>\n"
+        f"Promo codes are redeemed automatically — just type an active code as a "
+        f"normal message in DM or a group and the rewards are added instantly.\n\n"
         f"<i>Every game and /rob has a 60s cooldown. Bet within your wallet balance. "
         f"Unclaimed duel lobbies expire and refund the creator.</i>"
     )
@@ -468,6 +473,14 @@ def admin_help() -> str:
         f"<code>/forcelisting LISTING_ID</code> — force-cancel any listing\n\n"
         f"<b>🎁 Rewards</b>\n"
         f"<code>/setreward daily|weekly|monthly amount</code>\n\n"
+        f"<b>🎁 Promo Codes</b>\n"
+        f"<code>/addpromo CODE EXPIRY LIMIT REWARD [REWARD...]</code> — create\n"
+        f"<code>/rmpromo CODE</code> — disable (history kept)\n"
+        f"<code>/editpromo CODE FIELD VALUE [VALUE...]</code> — expiry|limit|active|reward\n"
+        f"<code>/promoinfo CODE</code> / <code>/promolist [status] [page]</code>\n"
+        f"<code>/promostats CODE</code> — redemption statistics\n"
+        f"<i>Rewards: rs:AMOUNT, stock:SYMBOL:QTY, asset:ASSET_ID:QTY. Expiry: "
+        f"lifetime or a number + min/hr/day/week/month/year.</i>\n\n"
         f"<b>👥 Users</b>\n"
         f"<code>/freeze @user</code> / <code>/unfreeze @user</code>\n"
         f"<code>/ban @user</code> / <code>/unban @user</code>\n"
@@ -910,3 +923,148 @@ def blackjack_info(config: dict[str, Any]) -> str:
         f"💥 Payout multiplier: <b>{config.get('multiplier', 1.0):.2f}x</b></blockquote>\n"
         f"<i>2 cards each, A=11/1, J/Q/K=10, highest total wins, ties refund the bet.</i>"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Promo system
+# --------------------------------------------------------------------------- #
+
+
+def _fmt_qty(value: float) -> str:
+    text = f"{value:.6f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def _reward_line(reward: dict[str, Any]) -> str:
+    kind = reward.get("type")
+    if kind == "currency":
+        return f"💰 {format_money(int(reward.get('amount', 0)))}"
+    if kind == "stock":
+        return f"📈 {escape(str(reward.get('symbol', '')))} × {_fmt_qty(float(reward.get('quantity', 0)))}"
+    if kind == "asset":
+        return f"🏠 {escape(str(reward.get('asset_id', '')))} × {_fmt_qty(float(reward.get('quantity', 0)))}"
+    return f"🎁 {escape(str(reward))}"
+
+
+def _promo_status(doc: dict[str, Any], now: int) -> str:
+    if not doc.get("is_active"):
+        return "Inactive"
+    expires_at = doc.get("expires_at")
+    if expires_at is not None and now >= int(expires_at):
+        return "Expired"
+    return "Active"
+
+
+def _expiry_text(doc: dict[str, Any]) -> str:
+    label = doc.get("expiry_label") or "Lifetime"
+    expires_at = doc.get("expires_at")
+    if expires_at is not None:
+        remaining = int(expires_at) - int(time.time())
+        if remaining > 0:
+            label += f" ({format_duration(remaining)} left)"
+        else:
+            label += " (expired)"
+    return label
+
+
+def _uses_text(doc: dict[str, Any]) -> str:
+    used = int(doc.get("redeemed_count", 0))
+    mx = doc.get("max_redemptions")
+    return f"{used} / {mx}" if mx is not None else f"{used} / ∞"
+
+
+def promo_created(doc: dict[str, Any]) -> str:
+    lines = [
+        f"🎟 Code: <code>{escape(doc['code'])}</code>",
+        f"⏰ Expiry: {_expiry_text(doc)}",
+        f"👥 Limit: {_uses_text(doc)}",
+        "🎁 Rewards:",
+    ]
+    lines.extend(f"  {_reward_line(r)}" for r in doc.get("rewards", []))
+    return f"<b>✅ PROMO CREATED</b>\n<blockquote>{chr(10).join(lines)}</blockquote>"
+
+
+def promo_redeemed(result: dict[str, Any]) -> str:
+    lines = [
+        f"🎟 Code: <code>{escape(result['promo']['code'])}</code>",
+        "🎁 Rewards:",
+    ]
+    lines.extend(f"  {g['description']}" for g in result.get("granted", []))
+    return (
+        f"<b>🎁 PROMO REDEEMED</b>\n"
+        f"<blockquote>{chr(10).join(lines)}</blockquote>\n"
+        f"<b>✅ Rewards added successfully.</b>"
+    )
+
+
+def promo_already_used() -> str:
+    return (
+        "<b>⚠️ PROMO ALREADY USED</b>\n"
+        "<blockquote>You have already redeemed this promo code. Each user can redeem once.</blockquote>"
+    )
+
+
+def promo_expired() -> str:
+    return "<b>⌛ PROMO EXPIRED</b>\n<blockquote>This promo code has expired.</blockquote>"
+
+
+def promo_inactive() -> str:
+    return "<b>🚫 PROMO INACTIVE</b>\n<blockquote>This promo code is no longer active.</blockquote>"
+
+
+def promo_limit_reached() -> str:
+    return (
+        "<b>❌ PROMO LIMIT REACHED</b>\n"
+        "<blockquote>This promo code has reached its maximum redemption limit.</blockquote>"
+    )
+
+
+def promo_info(doc: dict[str, Any]) -> str:
+    now = int(time.time())
+    lines = [
+        f"🎟 Code: <code>{escape(doc['code'])}</code>",
+        f"📊 Status: <b>{_promo_status(doc, now)}</b>",
+        f"⏰ Expiry: {_expiry_text(doc)}",
+        f"👥 Uses: {_uses_text(doc)}",
+        "👤 Per user: 1",
+        "🎁 Rewards:",
+    ]
+    lines.extend(f"  {_reward_line(r)}" for r in doc.get("rewards", []))
+    return f"<b>🎁 PROMO INFO</b>\n<blockquote>{chr(10).join(lines)}</blockquote>"
+
+
+def promo_list(docs: list[dict[str, Any]], total: int, page: int, per_page: int) -> str:
+    if not docs:
+        return "<b>🎁 PROMO LIST</b>\n<blockquote>No promos found.</blockquote>"
+    now = int(time.time())
+    lines = [
+        f"{idx}. <code>{escape(doc['code'])}</code> — <b>{_promo_status(doc, now)}</b> · "
+        f"{_expiry_text(doc)} · {_uses_text(doc)}"
+        for idx, doc in enumerate(docs, start=1)
+    ]
+    pages = max(1, math.ceil(total / per_page))
+    return (
+        f"<b>🎁 PROMO LIST</b>\n<blockquote>{chr(10).join(lines)}</blockquote>\n"
+        f"<i>Page {page} of {pages} · Total {total}</i>"
+    )
+
+
+def promo_stats(stats: dict[str, Any]) -> str:
+    promo = stats["promo"]
+    lines = [
+        f"🎟 Code: <code>{escape(promo['code'])}</code>",
+        f"✅ Redemptions: {stats['total_redemptions']}",
+        f"👥 Unique users: {stats['unique_users']}",
+    ]
+    remaining = stats["remaining"]
+    lines.append(f"♻️ Remaining: <b>{'∞' if remaining is None else remaining}</b>")
+    if stats["currency_total"]:
+        lines.append(f"💰 Currency given: {format_money(int(stats['currency_total']))}")
+    for symbol, qty in stats["stock_rows"]:
+        lines.append(f"📈 Stock given: {_fmt_qty(qty)} × {escape(symbol)}")
+    for asset_id, qty in stats["asset_rows"]:
+        lines.append(f"🏠 Asset given: {_fmt_qty(qty)} × {escape(asset_id)}")
+    if stats.get("last_redeemed_at"):
+        ago = int(time.time()) - int(stats["last_redeemed_at"])
+        lines.append(f"🕒 Last redemption: {format_duration(ago)} ago")
+    return f"<b>📊 PROMO STATS</b>\n<blockquote>{chr(10).join(lines)}</blockquote>"

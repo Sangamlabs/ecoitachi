@@ -47,6 +47,7 @@ class Mongo:
             bank,
             emoji_games,
             games,
+            promos,
             stocks,
             transactions,
             users,
@@ -62,6 +63,7 @@ class Mongo:
         await games.ensure_indexes()
         await emoji_games.ensure_indexes()
         await bank.ensure_indexes()
+        await promos.ensure_indexes()
 
 
 mongo = Mongo()

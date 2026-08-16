@@ -163,6 +163,11 @@ async def update_redemption(redemption_id: str, fields: dict[str, Any]) -> None:
     )
 
 
+async def delete_redemption(redemption_id: str) -> None:
+    """Remove a failed redemption so the user can retry the same code."""
+    await mongo.db[PROMO_REDEMPTIONS].delete_one({"_id": redemption_id})
+
+
 async def count_redemptions(promo_id: str) -> int:
     return await mongo.db[PROMO_REDEMPTIONS].count_documents({"promo_id": promo_id})
 
@@ -198,3 +203,25 @@ async def unique_users(promo_id: str) -> int:
     ]
     result = await mongo.db[PROMO_REDEMPTIONS].aggregate(pipeline).to_list(1)
     return result[0]["n"] if result else 0
+
+
+async def aggregate_granted(promo_id: str) -> list[dict[str, Any]]:
+    """Totals per reward type/detail from completed redemptions.
+
+    Returns rows like ``{"type": "stock", "detail": "BTC", "total": 0.12}``.
+    """
+    pipeline = [
+        {"$match": {"promo_id": promo_id, "status": "completed"}},
+        {"$unwind": "$rewards_granted"},
+        {
+            "$group": {
+                "_id": {
+                    "type": "$rewards_granted.type",
+                    "detail": "$rewards_granted.detail",
+                },
+                "total": {"$sum": "$rewards_granted.amount"},
+            }
+        },
+        {"$project": {"_id": 0, "type": "$_id.type", "detail": "$_id.detail", "total": 1}},
+    ]
+    return await mongo.db[PROMO_REDEMPTIONS].aggregate(pipeline).to_list(200)

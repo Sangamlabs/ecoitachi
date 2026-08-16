@@ -33,6 +33,8 @@ COMMAND_REGISTRY = [
     "handlers.emoji_admin",
     "handlers.rewards",
     "handlers.admin",
+    "handlers.promo_admin",
+    "handlers.promo_detect",
 ]
 
 

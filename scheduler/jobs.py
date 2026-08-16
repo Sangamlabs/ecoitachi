@@ -65,6 +65,18 @@ async def _run_emoji_expiry() -> None:
         logger.exception("emoji duel expiry job failed")
 
 
+async def _run_promo_expiry() -> None:
+    from services import promos as promo_service
+
+    try:
+        handled = await promo_service.expire_overdue()
+        await promo_service.cache.refresh()
+        if handled:
+            logger.info("expired %d overdue promos", handled)
+    except Exception:
+        logger.exception("promo expiry job failed")
+
+
 async def _run_monthly_tax() -> None:
     try:
         await tax_service.distribute_monthly()
@@ -112,6 +124,14 @@ def build_scheduler() -> AsyncIOScheduler:
         IntervalTrigger(minutes=1),
         id="emoji_expiry",
         name="expire emoji duel lobbies (refund creator)",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _run_promo_expiry,
+        IntervalTrigger(minutes=1),
+        id="promo_expiry",
+        name="expire overdue promos and refresh promo cache",
         max_instances=1,
         coalesce=True,
     )
