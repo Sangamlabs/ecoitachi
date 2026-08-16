@@ -50,8 +50,6 @@ def safe_handler(func=None, *, feature: str | None = None) -> Callable:
                         await reply_html(client, message, error(reason))
                     return
                 return await func(client, message, *args, **kwargs)
-            except (EconomyError, MoneyError, GameError, NoActiveGame) as exc:
-                await reply_html(client, message, error(str(exc)))
             except GameCooldownError as exc:
                 parts = str(exc).split(":")
                 game = parts[0] if parts else "game"
@@ -60,6 +58,8 @@ def safe_handler(func=None, *, feature: str | None = None) -> Callable:
 
                 await reply_html(client, message, game_cooldown(game, remaining))
             except GameInProgress as exc:
+                await reply_html(client, message, error(str(exc)))
+            except (EconomyError, MoneyError, GameError, NoActiveGame) as exc:
                 await reply_html(client, message, error(str(exc)))
             except FrozenUser:
                 await reply_html(client, message, error("Your account is frozen. Contact an admin."))

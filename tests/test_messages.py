@@ -6,7 +6,7 @@ content.  These tests need no database.
 
 from html.parser import HTMLParser
 
-from utils.messages import balance, leaderboard, profile, stock_list
+from utils.messages import balance, format_duration, game_cooldown, leaderboard, profile, stock_list
 
 
 class _HtmlValidator(HTMLParser):
@@ -68,3 +68,18 @@ def test_stock_list_safe_html():
     text = stock_list(assets)
     _assert_safe_html(text)
     assert "₹" in text
+
+
+def test_format_duration():
+    assert format_duration(0) == "0s"
+    assert format_duration(45) == "45s"
+    assert format_duration(90) == "1m 30s"
+    assert format_duration(3725) == "1h 2m 5s"
+    assert format_duration(90061) == "1d 1h 1m"
+
+
+def test_game_cooldown_readable_timer():
+    text = game_cooldown("fly", 3725)
+    assert "1h 2m 5s" in text
+    assert "3725s" not in text
+    _assert_safe_html(text)

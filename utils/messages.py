@@ -272,42 +272,51 @@ def bet_result(bet: int, won: bool, multiplier: float, payout: int, tx_id: str) 
     return f"<b>🎲 BET GAME</b>\n<blockquote>{result}\n🧾 <code>#{tx_id}</code></blockquote>"
 
 
-def game_cooldown(game: str, remaining: int) -> str:
-    return f"<b>⏳ {escape(game.title())} is on cooldown.</b>\n<i>Try again in {remaining}s.</i>"
-
-
-def _cooldown_label(seconds: int) -> str:
-    days, rem = divmod(int(seconds), 86_400)
-    hours = rem // 3600
+def format_duration(seconds: int) -> str:
+    """Human-readable countdown timer, e.g. 90 -> '1m 30s', 3725 -> '1h 2m 5s'."""
+    seconds = max(0, int(seconds))
+    days, rem = divmod(seconds, 86_400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
     if days:
-        return f"{days}d"
+        return f"{days}d {hours}h {minutes}m"
     if hours:
-        return f"{hours}h"
-    return f"{int(seconds) // 60}m"
+        return f"{hours}h {minutes}m {secs}s"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def game_cooldown(game: str, remaining: int) -> str:
+    return (
+        f"<b>⏳ {escape(game.title())} is on cooldown.</b>\n"
+        f"<i>Try again in <b>{format_duration(remaining)}</b>.</i>"
+    )
 
 
 def reward_claimed(kind: str, amount: int, cooldown: int) -> str:
     return (
         f"<b>🎁 {escape(kind.title())} REWARD</b>\n"
         f"<blockquote>You claimed <b>{format_money(amount)}</b>.\n"
-        f"Next claim in {_cooldown_label(cooldown)}.</blockquote>"
+        f"Next claim in {format_duration(cooldown)}.</blockquote>"
     )
 
 
 def rob_result(result: dict[str, Any], robber: dict[str, Any], victim: dict[str, Any]) -> str:
     victim_name = _user_name(victim)
+    next_rob = format_duration(result.get("cooldown", 0))
     if result["success"]:
         return (
             f"<b>🦹 ROBBERY SUCCESS</b>\n"
             f"<blockquote>You stole <b>{format_money(result['stolen'])}</b> from {victim_name}.\n"
             f"They had {format_money(result['target_bank_before'])} banked.</blockquote>\n"
-            f"<i>Next robbery in {result['cooldown']}s.</i>"
+            f"<i>Next robbery in {next_rob}.</i>"
         )
     return (
         f"<b>🚔 ROBBERY FAILED</b>\n"
         f"<blockquote>The police caught you robbing {victim_name}.\n"
         f"You got nothing.</blockquote>\n"
-        f"<i>Next robbery in {result['cooldown']}s.</i>"
+        f"<i>Next robbery in {next_rob}.</i>"
     )
 
 
