@@ -1,277 +1,327 @@
-"""Security data access layer.
+"""Persistent security model for global bans, cases, and dumps.
 
-Manages security cases, security dumps, global bans, and security audit events.
+All entities use numeric Telegram user IDs.  Usernames are never stored
+as identifiers.  The module only defines MongoDB document schemas and
+CRUD helpers — business logic lives in ``services/security.py``.
 """
 
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Optional
 
 from database.mongo import mongo
 
-CASES_COLLECTION = "security_cases"
-DUMPS_COLLECTION = "security_dumps"
-BANS_COLLECTION = "global_bans"
-EVENTS_COLLECTION = "security_events"
+COLLECTIONS: dict[str, str] = {
+    "global_bans": "global_bans",
+    "security_cases": "security_cases",
+    "security_dumps": "security_dumps",
+    "security_events": "security_events",
+}
 
 
-async def ensure_indexes() -> None:
-    cases = mongo.db[CASES_COLLECTION]
-    await cases.create_index("case_id", unique=True)
-    await cases.create_index("user_id")
-    await cases.create_index("case_type")
-    await cases.create_index("created_at")
-
-    dumps = mongo.db[DUMPS_COLLECTION]
-    await dumps.create_index("dump_id", unique=True)
-    await dumps.create_index("case_id")
-    await dumps.create_index("original_user_id")
-    await dumps.create_index("status")
-    await dumps.create_index("created_at")
-
-    bans = mongo.db[BANS_COLLECTION]
-    await bans.create_index("ban_id", unique=True)
-    await bans.create_index("user_id", unique=True)
-    await bans.create_index("case_id")
-    await bans.create_index("created_at")
-
-    events = mongo.db[EVENTS_COLLECTION]
-    await events.create_index("event_id", unique=True)
-    await events.create_index("user_id")
-    await events.create_index("case_id")
-    await events.create_index("dump_id")
-    await events.create_index("event_type")
-    await events.create_index("created_at")
+def ensure_indexes() -> None:
+    """Create indexed fields required for fast look-ups."""
+    for name, collection in COLLECTIONS.items():
+        coll = mongo.db[collection]
+        if name == "global_bans":
+            coll.create_index("user_id", unique=True)
+            coll.create_index("is_active")
+        elif name == "security_cases":
+            coll.create_index("case_id", unique=True)
+            coll.create_index("user_id")
+            coll.create_index("status")
+            coll.create_index("created_at")
+        elif name == "security_dumps":
+            coll.create_index("dump_id", unique=True)
+            coll.create_index("user_id")
+            coll.create_index("status")
+            coll.create_index("created_at")
+        elif name == "security_events":
+            coll.create_index("event_id", unique=True)
+            coll.create_index("user_id")
+            coll.create_index("created_at")
+            coll.create_index("type")
 
 
-# ============================================================
+# ---------------------------------------------------------------------------
+# Global Bans
+# ---------------------------------------------------------------------------
+
+
+async def create_global_ban(
+    user_id: int,
+    banned_by: int,
+    reason: str,
+    source: str = "manual",
+    case_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Create a new global ban entry.
+
+    Returns the stored document (without ``_id`` leakage).
+    """
+    doc = {
+        "user_id": user_id,
+        "banned_by": banned_by,
+        "reason": reason,
+        "source": source,
+        "case_id": case_id,
+        "is_active": True,
+        "banned_at": int(time.time()),
+    }
+    await mongo.db[COLLECTIONS["global_bans"]].replace_one(
+        {"user_id": user_id}, doc, upsert=True
+    )
+    return doc
+
+
+async def get_global_ban(user_id: int) -> Optional[dict[str, Any]]:
+    """Return the active global ban document for *user_id*, or ``None``."""
+    return await mongo.db[COLLECTIONS["global_bans"]].find_one({"user_id": user_id, "is_active": True})
+
+
+async def list_global_bans(active_only: bool = True) -> list[dict[str, Any]]:
+    """List global bans.  ``active_only=True`` excludes inactive entries."""
+    q = {"is_active": True} if active_only else {}
+    cursor = mongo.db[COLLECTIONS["global_bans"]].find(q)
+    return await cursor.to_list(length=None)
+
+
+async def remove_global_ban(user_id: int) -> bool:
+    """Soft‑delete a global ban (set ``is_active`` to ``False``)."""
+    result = await mongo.db[COLLECTIONS["global_bans"]].update_one(
+        {"user_id": user_id}, {"$set": {"is_active": False}}
+    )
+    return result.modified_count > 0
+
+
+# ---------------------------------------------------------------------------
 # Security Cases
-# ============================================================
+# ---------------------------------------------------------------------------
+
 
 async def create_case(
     case_id: str,
     user_id: int,
-    case_type: str,
-    reason: str,
-    created_by: int | None = None,
-    dump_id: str | None = None,
-    metadata: dict[str, Any] | None = None,
+    title: str,
+    detail: str,
+    created_by: int,
+    severity: str = "medium",
 ) -> dict[str, Any]:
-    now = int(time.time())
+    """Persist a new security case."""
+
     doc = {
         "case_id": case_id,
         "user_id": user_id,
-        "case_type": case_type,
-        "reason": reason,
+        "title": title,
+        "detail": detail,
         "created_by": created_by,
-        "dump_id": dump_id,
-        "metadata": metadata or {},
+        "severity": severity,
         "status": "open",
-        "created_at": now,
-        "updated_at": now,
-        "resolved_at": None,
-        "resolved_by": None,
+        "created_at": int(time.time()),
     }
-    await mongo.db[CASES_COLLECTION].insert_one(doc)
+    await mongo.db[COLLECTIONS["security_cases"]].replace_one(
+        {"case_id": case_id}, doc, upsert=True
+    )
     return doc
 
 
-async def get_case(case_id: str) -> dict[str, Any] | None:
-    return await mongo.db[CASES_COLLECTION].find_one({"case_id": case_id})
-
-
-async def get_cases_by_user(user_id: int, limit: int = 20) -> list[dict[str, Any]]:
-    cursor = mongo.db[CASES_COLLECTION].find({"user_id": user_id}).sort("created_at", -1).limit(limit)
-    return [doc async for doc in cursor]
-
-
-async def update_case(case_id: str, **changes: Any) -> dict[str, Any] | None:
-    changes["updated_at"] = int(time.time())
-    result = await mongo.db[CASES_COLLECTION].find_one_and_update(
-        {"case_id": case_id},
-        {"$set": changes},
-        return_document=True,
-    )
-    return result
+async def get_case(case_id: str) -> Optional[dict[str, Any]]:
+    """Return the case document, or ``None`` if not found."""
+    return await mongo.db[COLLECTIONS["security_cases"]].find_one({"case_id": case_id})
 
 
 async def list_cases(
-    case_type: str | None = None,
-    status: str | None = None,
-    limit: int = 50,
+    user_id: Optional[int] = None,
+    severity: Optional[str] = None,
+    status: Optional[str] = None,
 ) -> list[dict[str, Any]]:
-    query: dict[str, Any] = {}
-    if case_type:
-        query["case_type"] = case_type
+    """List security cases with optional filters."""
+    q: dict[str, Any] = {}
+    if user_id is not None:
+        q["user_id"] = user_id
+    if severity:
+        q["severity"] = severity
     if status:
-        query["status"] = status
-    cursor = mongo.db[CASES_COLLECTION].find(query).sort("created_at", -1).limit(limit)
-    return [doc async for doc in cursor]
+        q["status"] = status
+
+    cursor = mongo.db[COLLECTIONS["security_cases"]].find(q)
+    return await cursor.to_list(length=None)
 
 
-# ============================================================
+async def update_case(
+    case_id: str,
+    *,
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    resolved_by: Optional[int] = None,
+) -> bool:
+    """Update a case's status / severity / resolver."""
+    q = {"case_id": case_id}
+    s: dict[str, Any] = {}
+    if status is not None:
+        s["status"] = status
+    if severity is not None:
+        s["severity"] = severity
+    if resolved_by is not None:
+        s["resolved_by"] = resolved_by
+        s["resolved_at"] = int(time.time())
+
+    if not s:
+        return False
+
+    result = await mongo.db[COLLECTIONS["security_cases"]].update_one(q, {"$set": s})
+    return result.modified_count > 0
+
+
+# ---------------------------------------------------------------------------
 # Security Dumps
-# ============================================================
-
-async def create_dump(doc: dict[str, Any]) -> str:
-    await mongo.db[DUMPS_COLLECTION].insert_one(doc)
-    return doc["dump_id"]
+# ---------------------------------------------------------------------------
 
 
-async def get_dump(dump_id: str) -> dict[str, Any] | None:
-    return await mongo.db[DUMPS_COLLECTION].find_one({"dump_id": dump_id})
+async def create_dump(
+    dump_id: str,
+    user_id: int,
+    dump_type: str,
+    reason: str,
+    snapshot: dict[str, Any],
+    case_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Persist a new security dump *before* any destructive economy reset."""
 
-
-async def get_dump_by_case(case_id: str) -> dict[str, Any] | None:
-    return await mongo.db[DUMPS_COLLECTION].find_one({"case_id": case_id})
-
-
-async def get_dumps_by_user(user_id: int, limit: int = 20) -> list[dict[str, Any]]:
-    cursor = mongo.db[DUMPS_COLLECTION].find({"original_user_id": user_id}).sort("created_at", -1).limit(limit)
-    return [doc async for doc in cursor]
-
-
-async def update_dump(dump_id: str, **changes: Any) -> dict[str, Any] | None:
-    result = await mongo.db[DUMPS_COLLECTION].find_one_and_update(
-        {"dump_id": dump_id},
-        {"$set": changes},
-        return_document=True,
+    doc = {
+        "dump_id": dump_id,
+        "user_id": user_id,
+        "dump_type": dump_type,
+        "reason": reason,
+        "snapshot": snapshot,
+        "case_id": case_id,
+        "status": "active",
+        "created_at": int(time.time()),
+    }
+    await mongo.db[COLLECTIONS["security_dumps"]].replace_one(
+        {"dump_id": dump_id}, doc, upsert=True
     )
-    return result
+    return doc
+
+
+async def get_dump(dump_id: str) -> Optional[dict[str, Any]]:
+    """Return the dump document, or ``None`` if not found."""
+    return await mongo.db[COLLECTIONS["security_dumps"]].find_one({"dump_id": dump_id, "status": "active"})
 
 
 async def list_dumps(
-    dump_type: str | None = None,
-    status: str | None = None,
-    user_id: int | None = None,
-    limit: int = 50,
+    user_id: Optional[int] = None,
+    dump_type: Optional[str] = None,
+    status: Optional[str] = None,
 ) -> list[dict[str, Any]]:
-    query: dict[str, Any] = {}
+    """List security dumps with optional filters."""
+    q: dict[str, Any] = {}
+    if user_id is not None:
+        q["user_id"] = user_id
     if dump_type:
-        query["dump_type"] = dump_type
+        q["dump_type"] = dump_type
     if status:
-        query["status"] = status
-    if user_id:
-        query["original_user_id"] = user_id
-    cursor = mongo.db[DUMPS_COLLECTION].find(query).sort("created_at", -1).limit(limit)
-    return [doc async for doc in cursor]
+        q["status"] = status
+
+    cursor = mongo.db[COLLECTIONS["security_dumps"]].find(q)
+    return await cursor.to_list(length=None)
 
 
-async def count_dumps(
-    dump_type: str | None = None,
-    status: str | None = None,
-    user_id: int | None = None,
-) -> int:
-    query: dict[str, Any] = {}
-    if dump_type:
-        query["dump_type"] = dump_type
-    if status:
-        query["status"] = status
-    if user_id:
-        query["original_user_id"] = user_id
-    return await mongo.db[DUMPS_COLLECTION].count_documents(query)
+async def update_dump(
+    dump_id: str,
+    *,
+    status: Optional[str] = None,
+    used_by: Optional[int] = None,
+    used_at: Optional[int] = None,
+) -> bool:
+    """Mark a dump as used / consumed."""
+    q = {"dump_id": dump_id}
+    s: dict[str, Any] = {}
+    if status is not None:
+        s["status"] = status
+    if used_by is not None:
+        s["used_by"] = used_by
+    if used_at is not None:
+        s["used_at"] = used_at
+
+    if not s:
+        return False
+
+    result = await mongo.db[COLLECTIONS["security_dumps"]].update_one(q, {"$set": s})
+    return result.modified_count > 0
 
 
-# ============================================================
-# Global Bans
-# ============================================================
-
-async def create_global_ban(
-    ban_id: str,
-    user_id: int,
-    reason: str,
-    banned_by: int,
-    case_id: str | None = None,
-) -> dict[str, Any]:
-    now = int(time.time())
-    doc = {
-        "ban_id": ban_id,
-        "user_id": user_id,
-        "reason": reason,
-        "banned_by": banned_by,
-        "case_id": case_id,
-        "is_active": True,
-        "created_at": now,
-        "updated_at": now,
-        "unbanned_at": None,
-        "unbanned_by": None,
-    }
-    await mongo.db[BANS_COLLECTION].insert_one(doc)
-    return doc
+# ---------------------------------------------------------------------------
+# Security Events
+# ---------------------------------------------------------------------------
 
 
-async def get_global_ban(user_id: int) -> dict[str, Any] | None:
-    return await mongo.db[BANS_COLLECTION].find_one({"user_id": user_id, "is_active": True})
-
-
-async def get_global_ban_by_id(ban_id: str) -> dict[str, Any] | None:
-    return await mongo.db[BANS_COLLECTION].find_one({"ban_id": ban_id})
-
-
-async def remove_global_ban(user_id: int, unbanned_by: int) -> bool:
-    result = await mongo.db[BANS_COLLECTION].update_one(
-        {"user_id": user_id, "is_active": True},
-        {
-            "$set": {
-                "is_active": False,
-                "unbanned_at": int(time.time()),
-                "unbanned_by": unbanned_by,
-                "updated_at": int(time.time()),
-            }
-        },
-    )
-    return result.modified_count == 1
-
-
-async def list_global_bans(limit: int = 50) -> list[dict[str, Any]]:
-    cursor = mongo.db[BANS_COLLECTION].find({"is_active": True}).sort("created_at", -1).limit(limit)
-    return [doc async for doc in cursor]
-
-
-# ============================================================
-# Security Events (Audit Log)
-# ============================================================
-
-async def create_security_event(
+async def create_event(
     event_id: str,
     event_type: str,
     user_id: int,
-    actor_id: int | None,
-    case_id: str | None = None,
-    dump_id: str | None = None,
-    metadata: dict[str, Any] | None = None,
+    actor_id: int,
+    details: dict[str, Any],
+    case_id: Optional[str] = None,
+    dump_id: Optional[str] = None,
 ) -> dict[str, Any]:
-    now = int(time.time())
+    """Persist a security event (ban, dump creation, recovery, etc.)."""
+
     doc = {
         "event_id": event_id,
-        "event_type": event_type,
+        "type": event_type,
         "user_id": user_id,
         "actor_id": actor_id,
+        "details": details,
         "case_id": case_id,
         "dump_id": dump_id,
-        "metadata": metadata or {},
-        "created_at": now,
+        "created_at": int(time.time()),
     }
-    await mongo.db[EVENTS_COLLECTION].insert_one(doc)
+    await mongo.db[COLLECTIONS["security_events"]].replace_one(
+        {"event_id": event_id}, doc, upsert=True
+    )
     return doc
 
 
-async def get_security_events(
-    user_id: int | None = None,
-    event_type: str | None = None,
-    case_id: str | None = None,
-    dump_id: str | None = None,
-    limit: int = 50,
+async def list_events(
+    user_id: Optional[int] = None,
+    event_type: Optional[str] = None,
+    limit: int = 100,
 ) -> list[dict[str, Any]]:
-    query: dict[str, Any] = {}
-    if user_id:
-        query["user_id"] = user_id
+    """List recent security events, newest first."""
+    q: dict[str, Any] = {}
+    if user_id is not None:
+        q["user_id"] = user_id
     if event_type:
-        query["event_type"] = event_type
-    if case_id:
-        query["case_id"] = case_id
-    if dump_id:
-        query["dump_id"] = dump_id
-    cursor = mongo.db[EVENTS_COLLECTION].find(query).sort("created_at", -1).limit(limit)
-    return [doc async for doc in cursor]
+        q["type"] = event_type
+
+    cursor = mongo.db[COLLECTIONS["security_events"]].find(q).sort("created_at", -1)
+    return await cursor.limit(limit).to_list(length=None)
+
+
+# ---------------------------------------------------------------------------
+# Convenience: short‑hand for the most common-case dump creation
+# ---------------------------------------------------------------------------
+
+
+async def create_security_dump_user(
+    user_id: int,
+    dump_type: str = "manual",
+    reason: str = "Manual security clear",
+    snapshot: Optional[dict[str, Any]] = None,
+    case_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Create a dump for a user — the call‑site generates a UUID‑based ID."""
+
+    import uuid
+
+    dump_id = f"DUMP-{uuid.uuid4().hex[:8].upper()}"
+    snap = snapshot or {}
+    # Ensure we always have a user snapshot even if caller forgot
+    snap.setdefault("wallet", None)
+    snap.setdefault("bank", None)
+    snap.setdefault("stocks", {})
+    snap.setdefault("assets", {})
+
+    return await create_dump(dump_id, user_id, dump_type, reason, snap, case_id)

@@ -1,396 +1,420 @@
-"""Security service: secret detection, global bans, quarantine, economy integrity."""
+"""Centralized SecurityService — global ban, quarantine, secret detection,
+economy integrity, dump creation / recovery, and audit logging.
+
+All handlers must NOT contain business logic.  They must only:
+    1. Parse the command / resolve targets
+    2. Check permission (owner_only / sudo_or_owner)
+    3. Call a Service method
+    4. Send the HTML response
+"""
 
 from __future__ import annotations
 
 import logging
 import re
-import secrets
-import time
 import uuid
-from typing import Any
+from typing import Any, Dict, List, Optional, Set
 
-from database import security as sec_db, users as users_db
-from database.mongo import mongo
-from services import economy, settings as settings_service, transaction as tx_service
-from services.economy import ensure_active
-from utils.money import format_money
+from pyrogram import Client, filters
+from pyrogram.types import Message
 
-logger = logging.getLogger(__name__)
+from database import security as sec_db
+from services import settings as settings_service
+from utils.permissions import is_owner, is_sudo
+from utils.sender import reply_html
+from utils.messages import error, success, info
 
-# Secret patterns for high-confidence detection
-SECRET_PATTERNS = [
-    (r"[0-9]{8,10}:[a-zA-Z0-9_-]{35}", "Telegram Bot Token"),
-    (r"[a-fA-F0-9]{32}", "API Key / Hash (32-char hex)"),
-    (r"[a-zA-Z0-9_-]{20,}", "API Secret / Session String"),
-    (r"mongodb://[^\s]+", "MongoDB URI"),
-    (r"postgres://[^\s]+", "PostgreSQL URI"),
-    (r"redis://[^\s]+", "Redis URI"),
-    (r"-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----", "Private Key"),
-    (r"[a-zA-Z0-9+/]{40,}={0,2}", "Base64 encoded secret"),
+logger = logging.getLogger("security")
+
+
+# ---------------------------------------------------------------------------
+# Secret‑detection configuration
+# ---------------------------------------------------------------------------
+
+SECRET_PATTERNS: Dict[str, re.Pattern[str]] = {
+    "bot_token": re.compile(r"^\d{3,5}:[a-zA-Z0-9_-]{35}$"),
+    "api_key": re.compile(r"(?i)key\s*[:=]\s*[A-Za-z0-9]{20,}"),
+    "api_secret": re.compile(r"(?i)secret\s*[:=]\s*[A-Za-z0-9]{20,}"),
+    "private_key": re.compile(r"-----BEGIN (?:RSA |EC |OPEN )?PRIVATE KEY-----"),
+    "mongo_uri": re.compile(r"mongodb://[^\s]+|mongodb+srv://[^\s]+"),
+    "session_string": re.compile(r"^[0-9A-Za-z_\-\+]{30,}$"),
+}
+
+SECURITY_KEYWORDS: List[str] = [
+    "token", "api_key", "secret", "private_key", "mongo_uri", "session"
 ]
 
 
-async def get_security_config() -> dict[str, Any]:
-    return await settings_service.get_settings()
+def _contains_secret(text: str) -> Optional[str]:
+    """Return the pattern key if a secret is detected, else ``None``."""
+    for ptype, pattern in SECRET_PATTERNS.items():
+        if pattern.search(text):
+            return ptype
+    lowered = text.lower()
+    for kw in SECURITY_KEYWORDS:
+        if re.search(rf"\b{re.escape(kw)}\b", lowered):
+            return kw
+    return None
 
 
-async def _is_owner(user_id: int) -> bool:
-    from config import config
-    return user_id == config.OWNER_ID
+# ---------------------------------------------------------------------------
+# Global Ban Service
+# ---------------------------------------------------------------------------
 
 
-async def _is_sudo(user_id: int) -> bool:
-    from database import admins as admins_db
-    if await _is_owner(user_id):
-        return True
-    return await admins_db.is_sudo(user_id)
-
-
-async def detect_secret(text: str) -> tuple[bool, str | None]:
-    """Detect high-confidence secrets in text. Returns (found, secret_type)."""
-    if not text:
-        return False, None
-    for pattern, secret_type in SECRET_PATTERNS:
-        if re.search(pattern, text):
-            return True, secret_type
+async def global_ban_check(user_id: int) -> tuple[bool, Optional[str]]:
+    """Return ``(is_banned, reason)`` for a user."""
+    from database import security as sec_db
+    doc = await sec_db.get_global_ban(user_id)
+    if doc:
+        return True, doc.get("reason")
     return False, None
 
 
-async def _notify_owner(client, text: str) -> None:
-    from config import config
-    from utils.sender import send_html
-    try:
-        await send_html(client, config.OWNER_ID, text)
-    except Exception:
-        logger.exception("Failed to notify owner")
-
-
-async def _log_security_event(
-    event_type: str,
-    user_id: int,
-    actor_id: int | None,
-    case_id: str | None = None,
-    dump_id: str | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> str:
-    event_id = f"EVT-{secrets.token_hex(4).upper()}"
-    await sec_db.create_security_event(
-        event_id=event_id,
-        event_type=event_id,
-        user_id=user_id,
-        actor_id=actor_id,
-        case_id=case_id,
-        dump_id=dump_id,
-        metadata=metadata,
-    )
-    return event_id
-
-
-async def _create_global_ban(
+async def global_ban(
     user_id: int,
     reason: str,
     banned_by: int,
-    case_id: str | None = None,
-) -> str:
-    ban_id = f"GB-{secrets.token_hex(4).upper()}"
-    await sec_db.create_global_ban(
-        ban_id=ban_id,
+    source: str = "manual",
+    case_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Create / renew a global ban for *user_id*."""
+    # Soft‑delete any existing ban
+    await sec_db.remove_global_ban(user_id)
+
+    # If a critical ban, create a security case first
+    if "exploit" in reason.lower() or "critical" in reason.lower():
+        case_id = case_id or f"CASE-{uuid.uuid4().hex[:8].upper()}"
+        await sec_db.create_case(
+            case_id=case_id,
+            user_id=user_id,
+            title="Global ban – critical security violation",
+            detail=reason,
+            created_by=banned_by,
+            severity="high",
+        )
+
+    ban_doc = await sec_db.create_global_ban(
         user_id=user_id,
-        reason=reason,
         banned_by=banned_by,
+        reason=reason,
+        source=source,
         case_id=case_id,
     )
-    await users_db.set_user_flags(user_id, is_banned=True)
-    return ban_id
 
-
-async def _quarantine_account(user_id: int, case_id: str, reason: str) -> None:
-    await users_db.set_user_flags(user_id, is_frozen=True)
-    await sec_db.update_case(case_id, status="quarantined", resolved_at=int(time.time()))
-
-
-async def _reset_live_economy(user_id: int, recovery_balance: int = 20000) -> None:
-    """Reset live economy to recovery balance. Returns previous balances."""
-    user = await users_db.get_user(user_id)
-    if not user:
-        return
-    await mongo.db[users_db.COLLECTION].update_one(
-        {"user_id": user_id},
-        {
-            "$set": {
-                "wallet": recovery_balance,
-                "bank": 0,
-                "is_frozen": True,
-                "updated_at": int(time.time()),
-            }
+    # Create a security event
+    await sec_db.create_event(
+        event_id=f"EVT-{uuid.uuid4().hex[:8].upper()}",
+        event_type="global_ban",
+        user_id=user_id,
+        actor_id=banned_by,
+        details={
+            "reason": reason,
+            "source": source,
+            "case_id": case_id,
         },
     )
-    # Clear stock holdings
-    await mongo.db["stock_holdings"].delete_many({"user_id": user_id})
-    # Clear asset holdings
-    await mongo.db["asset_holdings"].delete_many({"user_id": user_id})
-    # Clear inventory
-    await mongo.db["inventory"].delete_many({"user_id": user_id})
 
-
-async def _flag_suspicious_transactions(user_id: int, case_id: str) -> int:
-    result = await mongo.db["transactions"].update_many(
-        {"user_id": user_id, "security_flagged": {"$ne": True}},
-        {"$set": {"security_flagged": True, "case_id": case_id}},
-    )
-    return result.modified_count
-
-
-async def _create_security_case(
-    case_id: str,
-    user_id: int,
-    case_type: str,
-    reason: str,
-    created_by: int | None = None,
-    dump_id: str | None = None,
-) -> dict[str, Any]:
-    return await sec_db.create_case(
-        case_id=case_id,
-        user_id=user_id,
-        case_type=case_type,
-        reason=reason,
-        created_by=created_by,
-        dump_id=dump_id,
-    )
-
-
-async def handle_secret_detection(
-    client,
-    message,
-    user_id: int,
-    text: str,
-) -> bool:
-    """Handle secret detection. Returns True if secret was detected and handled."""
-    if await _is_owner(user_id):
-        # Owner immunity - log only, notify owner
-        case_id = f"CASE-{secrets.token_hex(4).upper()}"
-        await _create_security_case(case_id, user_id, "SECRET_LEAK_OWNER", "Owner shared secret (logged only)")
-        await _log_security_event("SECRET_DETECTED_OWNER", user_id, user_id, case_id=case_id)
-        await _notify_owner(
-            client,
-            f"<b>🚨 CRITICAL SECURITY ALERT</b>\n\n"
-            f"<blockquote>"
-            f"<b>Event:</b> SECRET_LEAK\n"
-            f"<b>User ID:</b> <code>{user_id}</code> (OWNER)\n"
-            f"<b>Role:</b> OWNER\n"
-            f"<b>Action:</b> LOGGED ONLY (Owner Immunity)\n"
-            f"<b>Case:</b> <code>{case_id}</code>\n"
-            f"</blockquote>",
-        )
-        return True
-
-    # Check if sudo
-    is_sudo_user = await _is_sudo(user_id)
-
-    found, secret_type = await detect_secret(text)
-    if not found:
-        return False
-
-    # Delete offending message if possible
+    # Quarantine the user's economy
+    from services import economy as econ
     try:
-        await message.delete()
+        await econ.quarantine_user(user_id)
     except Exception:
-        pass
+        logger.warning("Failed to quarantine user %d during global ban", user_id)
 
-    case_id = f"CASE-{secrets.token_hex(4).upper()}"
-    ban_id = await _create_global_ban(
-        user_id=user_id,
-        reason=f"Secret leak: {secret_type}",
-        banned_by=user_id,  # auto-ban
+    return ban_doc
+
+
+async def global_unban(user_id: int) -> bool:
+    """Remove a global ban (soft‑delete)."""
+    result = await sec_db.remove_global_ban(user_id)
+    if result:
+        from services import economy as econ
+        await econ.clear_quarantine(user_id)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Security Cases Service
+# ---------------------------------------------------------------------------
+
+
+async def create_security_case(
+    user_id: int,
+    title: str,
+    detail: str,
+    created_by: int,
+    severity: str = "medium",
+) -> str:
+    """Create a new security case and return the ``case_id``."""
+    case_id = f"CASE-{uuid.uuid4().hex[:8].upper()}"
+    await sec_db.create_case(
         case_id=case_id,
+        user_id=user_id,
+        title=title,
+        detail=detail,
+        created_by=created_by,
+        severity=severity,
     )
+    return case_id
 
-    if is_sudo_user:
-        # Sudo secret violation: revoke sudo, dump, quarantine, global ban
-        from database import admins as admins_db
-        await admins_db.remove_sudo(user_id)
-        dump_id = await create_security_dump(user_id, case_id, "SECRET_LEAK", "sudo_secret_violation", user_id)
-        await _quarantine_account(user_id, case_id, "sudo_secret_violation")
-        await _notify_owner(
-            client,
-            f"<b>🚨 CRITICAL SECURITY ALERT</b>\n\n"
-            f"<blockquote>"
-            f"<b>Event:</b> SECRET_LEAK\n"
-            f"<b>User ID:</b> <code>{user_id}</code>\n"
-            f"<b>Role:</b> SUDO ADMIN\n"
-            f"<b>Action:</b> SUDO REVOKED + GLOBAL BAN + QUARANTINE\n"
-            f"<b>Case:</b> <code>{case_id}</code>\n"
-            f"<b>Ban ID:</b> <code>{ban_id}</code>\n"
-            f"<b>Dump:</b> <code>{dump_id}</code>\n"
-            f"</blockquote>",
-        )
-    else:
-        # Normal user: immediate global ban
-        dump_id = await create_security_dump(user_id, case_id, "SECRET_LEAK", "user_secret_leak", user_id)
-        await _notify_owner(
-            client,
-            f"<b>🚨 CRITICAL SECURITY ALERT</b>\n\n"
-            f"<blockquote>"
-            f"<b>Event:</b> SECRET_LEAK\n"
-            f"<b>User ID:</b> <code>{user_id}</code>\n"
-            f"<b>Role:</b> USER\n"
-            f"<b>Action:</b> GLOBAL BAN\n"
-            f"<b>Case:</b> <code>{case_id}</code>\n"
-            f"<b>Ban ID:</b> <code>{ban_id}</code>\n"
-            f"<b>Dump:</b> <code>{dump_id}</code>\n"
-            f"</blockquote>",
-        )
 
-    await _log_security_event("SECRET_DETECTED", user_id, user_id, case_id=case_id, dump_id=dump_id)
-    return True
+async def list_security_cases(
+    user_id: Optional[int] = None,
+    severity: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """List security cases, optionally filtered by user or severity."""
+    return await sec_db.list_cases(user_id=user_id, severity=severity)
+
+
+# ---------------------------------------------------------------------------
+# Security Dumps Service
+# ---------------------------------------------------------------------------
 
 
 async def create_security_dump(
     user_id: int,
-    case_id: str | None,
-    dump_type: str,
-    reason: str,
-    created_by: int,
-) -> str:
-    """Create a complete security dump of user's economy state."""
-    user = await users_db.get_user(user_id)
-    if not user:
-        raise ValueError(f"User {user_id} not found")
+    dump_type: str = "manual",
+    reason: str = "Manual security clear",
+    case_id: Optional[str] = None,
+    snapshot: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Create a security dump *before* any destructive economy operation."""
+    import uuid as _uuid
 
-    # Get economy snapshot
-    wallet = user.get("wallet", 0)
-    bank = user.get("bank", 0)
+    dump_id = f"DUMP-{_uuid.uuid4().hex[:8].upper()}"
 
-    # Get stock holdings
-    stock_holdings = []
-    stock_value = 0
-    cursor = mongo.db["stock_holdings"].find({"user_id": user_id})
-    async for h in cursor:
-        stock_holdings.append(h)
-        asset = await mongo.db["stocks"].find_one({"symbol": h["symbol"]})
-        if asset:
-            stock_value += int(asset.get("price", 0)) * h["quantity"]
+    from services import economy as econ
+    if snapshot is None:
+        try:
+            snap = await econ.get_user_economy_snapshot(user_id)
+        except Exception:
+            snap = {"wallet": None, "bank": None, "stocks": {}, "assets": {}}
+    else:
+        snap = snapshot
 
-    # Get asset holdings
-    asset_holdings = []
-    asset_value = 0
-    cursor = mongo.db["asset_holdings"].find({"user_id": user_id})
-    async for h in cursor:
-        asset_holdings.append(h)
-        asset = await mongo.db["assets"].find_one({"symbol": h["symbol"]})
-        if asset:
-            asset_value += int(asset.get("price", 0)) * h["quantity"]
-
-    # Get inventory
-    inventory = []
-    cursor = mongo.db["inventory"].find({"user_id": user_id})
-    async for h in cursor:
-        inventory.append(h)
-
-    # Get recent transactions
-    recent_txs = []
-    cursor = mongo.db["transactions"].find({"user_id": user_id}).sort("created_at", -1).limit(50)
-    async for t in cursor:
-        recent_txs.append(t)
-
-    dump_id = f"DUMP-{secrets.token_hex(4).upper()}"
-    now = int(time.time())
-
-    # Create security hash from immutable snapshot data
-    import hashlib
-    snapshot_data = f"{user_id}{wallet}{bank}{stock_value}{asset_value}{case_id}{now}"
-    security_hash = hashlib.sha256(snapshot_data.encode()).hexdigest()[:16]
-
-    dump_doc = {
-        "dump_id": dump_id,
-        "case_id": case_id,
-        "original_user_id": user_id,
-        "original_username": user.get("username"),
-        "original_name": user.get("first_name"),
-        "dump_type": dump_type,
-        "reason": reason,
-        "created_at": now,
-        "created_by": created_by,
-        "status": "AVAILABLE",
-        "security_hash": security_hash,
-        "wallet": wallet,
-        "bank": bank,
-        "stock_holdings": stock_holdings,
-        "stock_value": stock_value,
-        "asset_holdings": asset_holdings,
-        "asset_value": asset_value,
-        "inventory": inventory,
-        "recent_transactions": recent_txs,
-        "profile_config": {k: v for k, v in user.items() if k not in ("_id",)},
-        "recovery_status": "NOT_RESTORED",
-        "restored_at": None,
-        "restored_by": None,
-        "restoration_id": None,
-    }
-
-    await sec_db.create_dump(dump_doc)
-    await _log_security_event("DUMP_CREATED", user_id, created_by, case_id=case_id, dump_id=dump_id)
-    return dump_id
-
-
-async def handle_confirmed_economy_exploit(
-    client,
-    user_id: int,
-    reason: str,
-    detection_details: dict[str, Any] | None = None,
-) -> tuple[str, str]:
-    """Handle confirmed economy exploit. Returns (case_id, dump_id)."""
-    config = await get_security_config()
-    recovery_balance = int(config.get("clear_recovery_balance", 20000))
-
-    case_id = f"CASE-{secrets.token_hex(4).upper()}"
-    dump_id = await create_security_dump(user_id, case_id, "AUTO", reason, user_id)
-
-    # Flag suspicious transactions
-    await _flag_suspicious_transactions(user_id, case_id)
-
-    # Quarantine account
-    await _quarantine_account(user_id, case_id, reason)
-
-    # Reset live economy
-    await _reset_live_economy(user_id, recovery_balance)
-
-    # Global ban if configured
-    if config.get("global_ban_on_exploit", True):
-        await _create_global_ban(user_id, f"Economy exploit: {reason}", user_id, case_id)
-
-    await _notify_owner(
-        client,
-        f"<b>🚨 ECONOMY SECURITY ALERT</b>\n\n"
-        f"<blockquote>"
-        f"<b>Event:</b> UNAUTHORIZED_ECONOMY_CHANGE\n"
-        f"<b>User ID:</b> <code>{user_id}</code>\n"
-        f"<b>Case:</b> <code>{case_id}</code>\n"
-        f"<b>Action:</b> ACCOUNT QUARANTINED + ECONOMY RESET\n"
-        f"<b>Recovery:</b> {format_money(recovery_balance)}\n"
-        f"<b>Dump:</b> <code>{dump_id}</code>\n"
-        f"</blockquote>",
+    return await sec_db.create_dump(
+        dump_id=dump_id,
+        user_id=user_id,
+        dump_type=dump_type,
+        reason=reason,
+        snapshot=snap,
+        case_id=case_id,
     )
 
-    await _log_security_event("ECONOMY_EXPLOIT_DETECTED", user_id, user_id, case_id=case_id, dump_id=dump_id)
-    return case_id, dump_id
+
+async def list_security_dumps(
+    user_id: Optional[int] = None,
+    dump_type: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """List security dumps, optionally filtered by user or type."""
+    return await sec_db.list_dumps(user_id=user_id, dump_type=dump_type)
 
 
-async def global_ban_check(user_id: int) -> tuple[bool, str | None]:
-    """Check if user is globally banned. Returns (is_banned, ban_reason)."""
-    if await _is_owner(user_id):
-        return False, None
-    ban = await sec_db.get_global_ban(user_id)
-    if ban:
-        return True, ban.get("reason", "Global ban")
-    return False, None
+async def restore_from_dump(dump_id: str, target_user_id: int) -> bool:
+    """Atomic recovery from a security dump."""
+    dump = await sec_db.get_dump(dump_id)
+    if not dump:
+        return False
+    if dump.get("status") != "active":
+        return False
+
+    from services import economy as econ
+    snapshot = dump.get("snapshot", {})
+
+    try:
+        if snapshot.get("wallet") is not None:
+            await econ.set_user_balance(target_user_id, "wallet", int(snapshot["wallet"]))
+        if snapshot.get("bank") is not None:
+            await econ.set_user_balance(target_user_id, "bank", int(snapshot["bank"]))
+        stocks = snapshot.get("stocks", {})
+        for sym, qty in stocks.items():
+            if qty is not None:
+                await econ.set_user_stock(target_user_id, sym, int(qty))
+        assets = snapshot.get("assets", {})
+        for aid, info in assets.items():
+            qty = info.get("quantity", 0) if isinstance(info, dict) else info
+            if qty is not None and qty > 0:
+                await econ.set_user_asset(target_user_id, aid, int(qty))
+    except Exception as e:
+        logger.error("Failed to restore dump %s: %s", dump_id, e)
+        return False
+
+    await sec_db.update_dump(dump_id, status="used", used_by=target_user_id, used_at=int(time.time()))
+
+    await sec_db.create_event(
+        event_id=f"EVT-{uuid.uuid4().hex[:8].upper()}",
+        event_type="recovery_from_dump",
+        user_id=target_user_id,
+        actor_id=dump.get("user_id", 0),
+        details={"dump_id": dump_id, "restored_to": target_user_id},
+    )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Quarantine Service
+# ---------------------------------------------------------------------------
 
 
 async def quarantine_check(user_id: int) -> bool:
-    """Check if user is quarantined."""
-    if await _is_owner(user_id):
-        return False
-    user = await users_db.get_user(user_id)
-    if user:
-        return user.get("is_frozen", False)
+    from services import economy as econ
+    return await econ.is_quarantined(user_id)
+
+
+async def quarantine_user(user_id: int, reason: str = "Security quarantine") -> bool:
+    from services import economy as econ
+    return await econ.quarantine_user(user_id, reason)
+
+
+async def clear_quarantine(user_id: int) -> bool:
+    from services import economy as econ
+    return await econ.clear_quarantine(user_id)
+
+
+# ---------------------------------------------------------------------------
+# Secret Detection on Messages
+# ---------------------------------------------------------------------------
+
+
+async def handle_secret_detection(client: Client, message: Message) -> Optional[dict[str, Any]]:
+    """Handle a message that contains a detected secret."""
+    if not message.from_user:
+        return None
+    user_id = message.from_user.id
+    text = message.text or ""
+
+    if not text:
+        return None
+
+    detected_type = _contains_secret(text)
+    if not detected_type:
+        return None
+
+    await sec_db.create_event(
+        event_id=f"EVT-{uuid.uuid4().hex[:8].upper()}",
+        event_type="secret_leak",
+        user_id=user_id,
+        actor_id=user_id,
+        details={
+            "secret_type": detected_type,
+            "message_id": message.message_id,
+            "chat_id": message.chat.id if message.chat else 0,
+        },
+    )
+
+    high_confidence: Set[str] = {"bot_token", "mongo_uri", "private_key"}
+    if detected_type in high_confidence:
+        if not await is_owner(user_id):
+            try:
+                await global_ban(
+                    user_id=user_id,
+                    reason=f"Critical secret leak ({detected_type})",
+                    banned_by=user_id,
+                    source="auto_detection",
+                )
+                try:
+                    from services import economy as econ
+                    await econ.quarantine_user(user_id, "Critical secret leak")
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.error("Failed to auto-ban user %d for secret leak: %s", user_id, e)
+
+    return {
+        "secret_type": detected_type,
+        "user_id": user_id,
+        "message_id": message.message_id,
+        "action_taken": detected_type in high_confidence,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Economy Integrity Service
+# ---------------------------------------------------------------------------
+
+
+async def check_economy_integrity(user_id: int) -> Optional[dict[str, Any]]:
+    from services import economy as econ
+    return await econ.check_user_balance_integrity(user_id)
+
+
+# ---------------------------------------------------------------------------
+# Manual /clear Service
+# ---------------------------------------------------------------------------
+
+
+async def manual_clear(user_id: int, target_user_id: Optional[int] = None) -> tuple[bool, str]:
+    """Owner‑only manual clear of a user's recovery balance."""
+    if target_user_id is None:
+        target_user_id = user_id
+    clear_balance = await settings_service.get_clear_recovery_balance()
+    from services import economy as econ
+    ok = await econ.reset_recovery_balance(target_user_id, clear_balance)
+    if ok:
+        return True, f"Recovery balance cleared for user {target_user_id}. Default set to {clear_balance}."
+    else:
+        return False, "Nothing to clear or user not found."
+
+
+# ---------------------------------------------------------------------------
+# Manual Dump / Restore Service
+# ---------------------------------------------------------------------------
+
+
+async def manual_dump_user(user_id: int, reason: str = "Manual dump before clear") -> dict[str, Any]:
+    """Owner creates a manual dump of a user's economy state."""
+    from services import economy as econ
+    snapshot = await econ.get_user_economy_snapshot(user_id)
+    return await create_security_dump(
+        user_id=user_id,
+        dump_type="manual",
+        reason=reason,
+        snapshot=snapshot,
+    )
+
+
+async def manual_restore(dump_id: str, operator_id: int) -> tuple[bool, str]:
+    """Owner‑only restore from a dump."""
+    if not await is_owner(operator_id):
+        return False, "Only the bot owner can restore from security dumps."
+    success = await restore_from_dump(dump_id, operator_id)
+    if success:
+        return True, f"Successfully restored from dump <code>{dump_id}</code>."
+    else:
+        return False, f"Dump <code>{dump_id}</code> not found, already used, or restore failed."
+
+
+async def manual_restorecase(case_id: str, operator_id: int) -> tuple[bool, str]:
+    """Owner‑only restore from a security case."""
+    if not await is_owner(operator_id):
+        return False, "Only the bot owner can restore from security cases."
+    case = await sec_db.get_case(case_id)
+    if not case:
+        return False, f"Case <code>{case_id}</code> not found."
+    from services import economy as econ
+    user_id = case["user_id"]
+    detail = case.get("detail", "").lower()
+    if "recovery" in detail or "restore" in detail:
+        ok, msg = await manual_clear(operator_id, user_id)
+        if ok:
+            return True, f"Recovered user {user_id} from case <code>{case_id}</code>."
+        return False, msg
+    return False, f"Case <code>{case_id}</code> does not have a recoverable action."
+
+
+# ---------------------------------------------------------------------------
+# SUDO Security Helper
+# ---------------------------------------------------------------------------
+
+
+async def check_sudo_security(user_id: int, action: str = "unknown") -> bool:
+    """Check whether a SUDO admin is permitted to perform *action*."""
+    if await is_owner(user_id):
+        return True
+    if await is_sudo(user_id):
+        blocked_commands: Set[str] = {"clear", "restore", "recover", "restorecase", "dumpinfo"}
+        if action in blocked_commands:
+            return False
+        return True
     return False

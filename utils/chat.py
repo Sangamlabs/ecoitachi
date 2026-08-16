@@ -4,6 +4,9 @@ Supported chat types: PRIVATE, GROUP, SUPERGROUP.  Every command handler runs
 through :func:`check_gate` (via ``safe_handler``) so chat-level restrictions
 live in ONE place — the group configuration service — instead of being
 hardcoded across handlers.
+
+Security checks (global ban / quarantine) are also applied here, BEFORE
+group config, so banned/quarantined users cannot access any command.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from pyrogram.enums import ChatType
 from pyrogram.types import Message
 
 from services import group_config as group_config_service
+from services import security as security_service
 from utils.permissions import is_owner
 
 UNSUPPORTED = "OTHER"
@@ -57,7 +61,21 @@ async def check_gate(message: Message, feature: str | None = None) -> tuple[bool
     ``feature`` selects the per-chat feature toggle (economy/games/leaderboard/
     admin).  ``None`` only requires the group to be enabled.  ``"chat_control"``
     bypasses every group toggle so owners/sudo can always manage a chat's config.
+
+    Security checks (global ban / quarantine) are applied FIRST, before group
+    config, so banned/quarantined users are blocked from ALL commands.
     """
+    user_id = message.from_user.id if message.from_user else 0
+
+    # ---- Security checks: global ban and quarantine ----
+    if user_id:
+        is_banned, ban_reason = await security_service.global_ban_check(user_id)
+        if is_banned:
+            return False, f"You are globally banned: {ban_reason}"
+        is_quarantined = await security_service.quarantine_check(user_id)
+        if is_quarantined:
+            return False, "Your account is quarantined. Contact the owner."
+
     kind = chat_type(message.chat)
     if kind == UNSUPPORTED:
         return False, "This bot only works in private chats and groups."
@@ -65,17 +83,6 @@ async def check_gate(message: Message, feature: str | None = None) -> tuple[bool
         return True, None
     if feature == "chat_control":
         return True, None
-
-    # Security checks: global ban and quarantine (before group config)
-    user_id = message.from_user.id if message.from_user else 0
-    if user_id:
-        from services import security as security_service
-        is_banned, ban_reason = await security_service.global_ban_check(user_id)
-        if is_banned:
-            return False, f"You are globally banned: {ban_reason}"
-        is_quarantined = await security_service.quarantine_check(user_id)
-        if is_quarantined:
-            return False, "Your account is quarantined. Contact the owner."
 
     cfg = await group_config_service.get_group_config(message.chat.id)
     if not cfg.get("group_enabled", True):

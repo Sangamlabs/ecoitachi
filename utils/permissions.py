@@ -77,7 +77,7 @@ admin_only = sudo_only  # admin == owner or sudo in Phase 1
 
 # Security-specific decorators
 # These enforce OWNER-only access for security recovery commands
-# SUDO cannot use these even if they try
+# SUDO ADMINS CANNOT USE THESE
 
 def security_owner_only(func: Callable[..., Awaitable]) -> Callable:
     """Decorator for OWNER-ONLY security commands (/clear, /restore, /recover, /restorecase, /dumpinfo, /dumps).

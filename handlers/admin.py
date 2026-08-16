@@ -11,27 +11,30 @@ import logging
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
-from database import admins as admins_db, users as users_db
+from database import users as users_db, admins as admins_db
 from database import stocks as stocks_db
 from database.mongo import mongo
 from handlers.common import ensure_user, safe_handler
-from services import bank as bank_service, economy, settings as settings_service, tax as tax_service
+from services import bank as bank_service, economy, settings as settings_service, transaction as tx_service
+from services import security as security_service
 from services import group_config as group_config_service
-from services import transaction as tx_service
-from services.economy import EconomyError
+from services import transaction as tx_service2
+from services.economy import EconomyError, BannedUser, FrozenUser, InsufficientBalance
+from services.security import (
+    global_ban_check, global_ban, global_unban,
+    create_security_case, list_security_cases,
+    create_security_dump, list_security_dumps,
+    restore_from_dump, manual_restore, manual_restorecase,
+    manual_dump_user, quarantine_check, quarantine_user,
+    clear_quarantine, check_sudo_security,
+    handle_secret_detection
+)
+from handlers.promo_admin import msgs as promo_msgs
 from utils import messages as msgs
 from utils.chat import chat_type
 from utils.money import format_money
-from utils.permissions import is_owner as utils_permissions_is_owner
-from utils.permissions import owner_only, sudo_only
+from utils.permissions import is_owner as utils_is_owner, owner_only, sudo_only
 from utils.sender import reply_html
-from utils.validators import (
-    is_safe_multiplier,
-    is_safe_percent,
-    is_safe_probability,
-    parse_amount_or_error,
-    validate_min_max,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +68,8 @@ async def _resolve_target(message: Message, arg: str | None) -> int | None:
     if not arg:
         return None
     if arg.startswith("@"):
+        from database import users as users_db
+
         doc = await users_db.get_user_by_username(arg[1:])
         return doc["user_id"] if doc else None
     if arg.isdigit():
@@ -87,24 +92,22 @@ def _validate_fly_settings(difficulty: str, settings: dict) -> str | None:
             continue
         value = settings[key]
         if key in ("min_mult", "max_mult"):
-            if not is_safe_multiplier(value):
+            if not (0 < value <= 1000):
                 return "Multipliers must be finite and between 0 and 1000."
         elif key == "risk":
-            if not is_safe_percent(value):
+            if not (0 <= value <= 100):
                 return "Risk must be a percentage between 0 and 100."
         elif key == "win_prob":
-            if not is_safe_probability(value):
+            if not (0 <= value <= 1):
                 return "Win probability must be between 0 and 1."
         elif value < 0:
             return f"{key} cannot be negative."
-    if "min_mult" in settings and "max_mult" in settings and not validate_min_max(
-        settings["min_mult"], settings["max_mult"]
-    ):
-        return "minimum multiplier cannot exceed maximum multiplier."
-    if "min_bet" in settings and "max_bet" in settings and not validate_min_max(
-        settings["min_bet"], settings["max_bet"]
-    ):
-        return "minimum bet cannot exceed maximum bet."
+    if "min_mult" in settings and "max_mult" in settings:
+        if not (settings["min_mult"] <= settings["max_mult"]):
+            return "minimum multiplier cannot exceed maximum multiplier."
+    if "min_bet" in settings and "max_bet" in settings:
+        if not (settings["min_bet"] <= settings["max_bet"]):
+            return "minimum bet cannot exceed maximum bet."
     return None
 
 
@@ -118,6 +121,8 @@ def register(app: Client) -> None:
         if target is None:
             await reply_html(client, message, msgs.error("Usage: <code>/addsudo @user</code> or reply."))
             return
+        from database import admins as admins_db
+
         await admins_db.add_sudo(target, message.from_user.id)
         await reply_html(client, message, msgs.success(f"Added <code>{target}</code> as sudo admin."))
 
@@ -127,9 +132,8 @@ def register(app: Client) -> None:
     async def cmd_rsudo(client: Client, message: Message):
         target = await _resolve_target(message, message.command[1] if len(message.command) > 1 else None)
         if target is None:
-            await reply_html(client, message, msgs.error("Usage: <code>/rsudo @user</code> or reply."))
             return
-        if await utils_permissions_is_owner(target):
+        if await utils_is_owner(target):
             await reply_html(client, message, msgs.error("You cannot remove the owner."))
             return
         removed = await admins_db.remove_sudo(target)
@@ -154,16 +158,16 @@ def register(app: Client) -> None:
         target = await _need_user_or_error(client, message, args[0] if args else None)
         if target is None:
             return
-        amount, err = parse_amount_or_error(args[1] if len(args) > 1 else "")
+        amount, err = economy.parse_amount_or_error(args[1] if len(args) > 1 else "")
         if err:
             await reply_html(client, message, msgs.error(f"Usage: <code>/give @user amount</code>. {err}"))
             return
         actor = message.from_user.id
         await economy.admin_give(target, amount, actor)
         before = await economy.get_balance(target)
-        tx_id = await tx_service.record(
+        tx_id = await tx_service2.record(
             user_id=target,
-            ttype=tx_service.ADMIN_GIVE,
+            ttype=tx_service2.ADMIN_GIVE,
             amount=amount,
             balance_before=before["wallet"],
             balance_after=before["wallet"] + amount,
@@ -183,7 +187,7 @@ def register(app: Client) -> None:
         target = await _need_user_or_error(client, message, args[0] if args else None)
         if target is None:
             return
-        amount, err = parse_amount_or_error(args[1] if len(args) > 1 else "")
+        amount, err = economy.parse_amount_or_error(args[1] if len(args) > 1 else "")
         if err:
             await reply_html(client, message, msgs.error(f"Usage: <code>/remove @user amount</code>. {err}"))
             return
@@ -194,9 +198,9 @@ def register(app: Client) -> None:
         except EconomyError as exc:
             await reply_html(client, message, msgs.error(str(exc)))
             return
-        tx_id = await tx_service.record(
+        tx_id = await tx_service2.record(
             user_id=target,
-            ttype=tx_service.ADMIN_REMOVE,
+            ttype=tx_service2.ADMIN_REMOVE,
             amount=amount,
             balance_before=before["wallet"],
             balance_after=before["wallet"] - amount,
@@ -212,16 +216,16 @@ def register(app: Client) -> None:
     @safe_handler(feature="admin")
     async def cmd_getcoin(client: Client, message: Message):
         await ensure_user(client, message)
-        amount, err = parse_amount_or_error(message.command[1] if len(message.command) > 1 else "")
+        amount, err = economy.parse_amount_or_error(message.command[1] if len(message.command) > 1 else "")
         if err:
             await reply_html(client, message, msgs.error(f"Usage: <code>/getcoin amount</code>. {err}"))
             return
         actor = message.from_user.id
         await economy.admin_give(actor, amount, actor)
         before = await economy.get_balance(actor)
-        tx_id = await tx_service.record(
+        tx_id = await tx_service2.record(
             user_id=actor,
-            ttype=tx_service.ADMIN_GIVE,
+            ttype=tx_service2.ADMIN_GIVE,
             amount=amount,
             balance_before=before["wallet"],
             balance_after=before["wallet"] + amount,
@@ -246,7 +250,7 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid interest rate."))
             return
-        if not is_safe_percent(rate):
+        if not economy.is_safe_percent(rate):
             await reply_html(client, message, msgs.error("Interest rate must be between 0 and 100."))
             return
         await bank_service.set_interest_rate(rate, message.from_user.id)
@@ -266,7 +270,7 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid tax rate."))
             return
-        if not is_safe_percent(rate):
+        if not economy.is_safe_percent(rate):
             await reply_html(client, message, msgs.error("Tax rate must be between 0 and 100."))
             return
         await bank_service.set_tax_rate(rate, message.from_user.id)
@@ -274,7 +278,7 @@ def register(app: Client) -> None:
 
     @app.on_message(filters.command("setincome") & NOT_CHANNEL)
     @sudo_only
-    @safe_handler
+    @safe_handler(feature="admin")
     async def cmd_setincome(client: Client, message: Message):
         await ensure_user(client, message)
         args = message.command[1:]
@@ -289,7 +293,7 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid rate."))
             return
-        if not is_safe_percent(rate):
+        if not economy.is_safe_percent(rate):
             await reply_html(client, message, msgs.error("Rate must be between 0 and 100."))
             return
         field = {
@@ -332,7 +336,7 @@ def register(app: Client) -> None:
             await reply_html(client, message, msgs.error("Usage: <code>/track TRANSACTION_ID</code>"))
             return
         tx_id = raw.strip()
-        doc = await tx_service.get_by_id(tx_id)
+        doc = await tx_service2.get_by_id(tx_id)
         if doc is None:
             await reply_html(client, message, msgs.error(f"Transaction <code>#{tx_id}</code> not found."))
             return
@@ -360,7 +364,7 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid rate."))
             return
-        if not is_safe_percent(rate):
+        if not economy.is_safe_percent(rate):
             await reply_html(client, message, msgs.error("Rate must be between 0 and 100."))
             return
         if system == "bank":
@@ -386,10 +390,12 @@ def register(app: Client) -> None:
     @sudo_only
     @safe_handler
     async def cmd_banksettings(client: Client, message: Message):
+        await ensure_user(client, message)
         settings = await bank_service.get_bank_settings()
         pool = await tax_service.get_pool_size()
         await reply_html(client, message, msgs.banksettings(settings, pool))
 
+    # ---------------- FLY GAME ----------------
     @app.on_message(filters.command("flyset") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
@@ -467,6 +473,7 @@ def register(app: Client) -> None:
         await settings_service.update_game_settings("fly", **{difficulty: fly_cfg})
         await reply_html(client, message, msgs.success(f"Fly <code>{difficulty}</code> settings updated."))
 
+    # ---------------- BET GAME ----------------
     @app.on_message(filters.command("betset") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
@@ -486,13 +493,13 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid numeric value."))
             return
-        if not is_safe_probability(win_prob):
+        if not economy.is_safe_probability(win_prob):
             await reply_html(client, message, msgs.error("Win probability must be between 0 and 1."))
             return
-        if not is_safe_multiplier(multiplier):
+        if not economy.is_safe_multiplier(multiplier):
             await reply_html(client, message, msgs.error("Multiplier must be between 0 and 1000."))
             return
-        if not validate_min_max(min_bet, max_bet):
+        if not economy.validate_min_max(min_bet, max_bet):
             await reply_html(client, message, msgs.error("Minimum bet cannot exceed maximum bet."))
             return
         changes = {
@@ -506,6 +513,7 @@ def register(app: Client) -> None:
         await settings_service.update_game_settings("bet", **changes)
         await reply_html(client, message, msgs.success("Bet game settings updated."))
 
+    # ---------------- MINES GAME ----------------
     @app.on_message(filters.command("minestrap") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
@@ -535,7 +543,7 @@ def register(app: Client) -> None:
             except ValueError:
                 await reply_html(client, message, msgs.error("Invalid multiplier table."))
                 return
-            if any(not is_safe_multiplier(x) for x in table) or not table:
+            if any(not economy.is_safe_multiplier(x) for x in table) or not table:
                 await reply_html(client, message, msgs.error("Multipliers must be finite and positive."))
                 return
             await settings_service.update_game_settings(
@@ -562,7 +570,7 @@ def register(app: Client) -> None:
                 f"min_reveals must be between 1 and {36 - bombs} (36 - bombs)."
             ))
             return
-        if not validate_min_max(min_bet, max_bet):
+        if not economy.validate_min_max(min_bet, max_bet):
             await reply_html(client, message, msgs.error("Minimum bet cannot exceed maximum bet."))
             return
         await settings_service.update_game_settings(
@@ -590,7 +598,7 @@ def register(app: Client) -> None:
             )
             return
         kind = args[0].lower()
-        amount, err = parse_amount_or_error(args[1])
+        amount, err = economy.parse_amount_or_error(args[1])
         if err:
             await reply_html(client, message, msgs.error(err))
             return
@@ -621,9 +629,7 @@ def register(app: Client) -> None:
         if len(args) < 2 or args[0].lower() not in ROB_FIELDS:
             await reply_html(
                 client, message,
-                msgs.error(
-                    "Usage: <code>/robset win_prob|percent|min|max|cooldown value</code>"
-                ),
+                msgs.error("Usage: <code>/robset win_prob|percent|min|max|cooldown value</code>"),
             )
             return
         field, raw = args[0].lower(), args[1]
@@ -633,10 +639,10 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid numeric value."))
             return
-        if field == "win_prob" and not is_safe_probability(value):
+        if field == "win_prob" and not economy.is_safe_probability(value):
             await reply_html(client, message, msgs.error("Win probability must be between 0 and 1."))
             return
-        if field == "percent" and not is_safe_percent(value):
+        if field == "percent" and not economy.is_safe_percent(value):
             await reply_html(client, message, msgs.error("Percent must be between 0 and 100."))
             return
         if value < 0:
@@ -644,12 +650,13 @@ def register(app: Client) -> None:
             return
         current = await settings_service.get_game_settings("rob")
         current[key] = value
-        if not validate_min_max(int(current.get("minimum_amount", 0)), int(current.get("maximum_amount", 0))):
+        if not economy.validate_min_max(int(current.get("minimum_amount", 0)), int(current.get("maximum_amount", 0))):
             await reply_html(client, message, msgs.error("Minimum amount cannot exceed maximum amount."))
             return
         await settings_service.update_game_settings("rob", **current)
         await reply_html(client, message, msgs.success(f"Rob <code>{field}</code> set to {value}."))
 
+    # ---------------- FREEZE / UNFREEZE ----------------
     @app.on_message(filters.command("freeze") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
@@ -657,7 +664,7 @@ def register(app: Client) -> None:
         target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
         if target is None or target == 6356015122:
             if target == 6356015122:
-                await reply_html(client, message, msgs.error("User not found. They must start the bot."))
+                await reply_html(client, message, msgs.error("Owner cannot be frozen."))
             return
         await users_db.set_user_flags(target, is_frozen=True)
         await reply_html(client, message, msgs.success(f"Frozen <code>{target}</code>."))
@@ -672,6 +679,7 @@ def register(app: Client) -> None:
         await users_db.set_user_flags(target, is_frozen=False)
         await reply_html(client, message, msgs.success(f"Unfrozen <code>{target}</code>."))
 
+    # ---------------- BAN / UNBAN (local economy ban) ----------------
     @app.on_message(filters.command("ban") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
@@ -681,6 +689,9 @@ def register(app: Client) -> None:
             return
         if target == message.from_user.id:
             await reply_html(client, message, msgs.error("You cannot ban yourself."))
+            return
+        if target == 6356015122:
+            await reply_html(client, message, msgs.error("You cannot ban the owner."))
             return
         await users_db.set_user_flags(target, is_banned=True)
         await reply_html(client, message, msgs.success(f"Banned <code>{target}</code>."))
@@ -695,6 +706,7 @@ def register(app: Client) -> None:
         await users_db.set_user_flags(target, is_banned=False)
         await reply_html(client, message, msgs.success(f"Unbanned <code>{target}</code>."))
 
+    # ---------------- USERINFO ----------------
     @app.on_message(filters.command("userinfo") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
@@ -709,6 +721,7 @@ def register(app: Client) -> None:
         stats = {"transactions": await count_for_user(target)}
         await reply_html(client, message, msgs.userinfo(doc, stats))
 
+    # ---------------- ECONSTATS ----------------
     @app.on_message(filters.command("econstats") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
@@ -722,6 +735,172 @@ def register(app: Client) -> None:
             "stocks": len(await stocks_db.list_active_assets()),
         }
         await reply_html(client, message, msgs.admin_stats(stats))
+
+    # ---------------- SECURITY COMMANDS ----------------
+    # /gban - Global ban (owner + sudo)
+    @app.on_message(filters.command("gban") & NOT_CHANNEL)
+    @security_service.check_sudo_security  # type: ignore
+    @safe_handler
+    async def cmd_gban(client: Client, message: Message):
+        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        if target is None:
+            return
+        # Owner immunity check - owner cannot be globally banned
+        if target == message.from_user.id:
+            await reply_html(client, message, msgs.error("You cannot globally ban yourself."))
+            return
+        if target == 6356015122:
+            await reply_html(client, message, msgs.error("You cannot globally ban the owner."))
+            return
+        reason = message.command[2] if len(message.command) > 2 else None
+        # Check if this is a critical secret leak that should auto-ban
+        from services import security as sec_svc
+        # Detect if message contains secret (already handled by middleware)
+        # For now, proceed with global ban
+        banned_by = message.from_user.id
+        # Create security case for critical violations
+        if "exploit" in (reason or "").lower() or "critical" in (reason or "").lower():
+            case_id = f"CASE-{uuid.uuid4().hex[:8].upper()}"
+            await sec_db.create_case(
+                case_id=case_id,
+                user_id=target,
+                title="Global ban – critical security violation",
+                detail=reason or "Global ban by admin",
+                created_by=banned_by,
+                severity="high",
+            )
+        else:
+            case_id = None
+        ban_doc = await sec_service.global_ban(target, reason or "Global ban by admin", banned_by, case_id=case_id)
+        # Also set local ban flag
+        await users_db.set_user_flags(target, is_banned=True)
+        await reply_html(
+            client, message,
+            msgs.success(f"User <code>{target}</code> globally banned."),
+        )
+
+    # /ungban - Remove global ban (owner + sudo)
+    @app.on_message(filters.command("ungban") & NOT_CHANNEL)
+    @security_service.check_sudo_security  # type: ignore
+    @safe_handler
+    async def cmd_ungban(client: Client, message: Message):
+        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        if target is None:
+            return
+        if target == 6356015122:
+            await reply_html(client, message, msgs.error("You cannot unban the owner."))
+            return
+        result = await sec_service.global_unban(target)
+        if result:
+            await users_db.set_user_flags(target, is_banned=False)
+            await reply_html(
+                client, message,
+                msgs.success(f"User <code>{target}</code> unglobally banned."),
+            )
+        else:
+            await reply_html(
+                client, message,
+                msgs.error(f"User <code>{target}</code> was not globally banned."),
+            )
+
+    # /clear - Clear recovery balance (owner only)
+    @app.on_message(filters.command("clear") & NOT_CHANNEL)
+    @owner_only
+    @safe_handler
+    async def cmd_clear(client: Client, message: Message):
+        target = message.from_user.id
+        ok, msg = await security_service.manual_clear(target)
+        await reply_html(client, message, msgs.success(msg) if ok else msgs.error(msg))
+
+    # /restore - Restore from dump (owner only)
+    @app.on_message(filters.command("restore") & NOT_CHANNEL)
+    @owner_only
+    @safe_handler
+    async def cmd_restore(client: Client, message: Message):
+        args = message.command[1:]
+        if not args:
+            await reply_html(client, message, msgs.error("Usage: <code>/restore DUMP-ID</code>"))
+            return
+        dump_id = args[0]
+        ok, msg = await security_service.manual_restore(dump_id, message.from_user.id)
+        await reply_html(client, message, msgs.success(msg) if ok else msgs.error(msg))
+
+    # /recover - Recover from dump (owner only)
+    @app.on_message(filters.command("recover") & NOT_CHANNEL)
+    @owner_only
+    @safe_handler
+    async def cmd_recover(client: Client, message: Message):
+        args = message.command[1:]
+        if not args:
+            await reply_html(client, message, msgs.error("Usage: <code>/recover DUMP-ID</code>"))
+            return
+        dump_id = args[0]
+        ok, msg = await security_service.manual_restore(dump_id, message.from_user.id)
+        await reply_html(client, message, msgs.success(msg) if ok else msgs.error(msg))
+
+    # /restorecase - Restore from case (owner only)
+    @app.on_message(filters.command("restorecase") & NOT_CHANNEL)
+    @owner_only
+    @safe_handler
+    async def cmd_restorecase(client: Client, message: Message):
+        args = message.command[1:]
+        if not args:
+            await reply_html(client, message, msgs.error("Usage: <code>/restorecase CASE-ID</code>"))
+            return
+        case_id = args[0]
+        ok, msg = await security_service.manual_restorecase(case_id, message.from_user.id)
+        await reply_html(client, message, msgs.success(msg) if ok else msgs.error(msg))
+
+    # /dumpinfo - Show dump info (owner + sudo)
+    @app.on_message(filters.command("dumpinfo") & NOT_CHANNEL)
+    @security_service.check_sudo_security  # type: ignore
+    @safe_handler
+    async def cmd_dumpinfo(client: Client, message: Message):
+        from services import security as sec_svc
+        dumps = await sec_service.list_security_dumps()
+        if not dumps:
+            await reply_html(client, message, msgs.info("No security dumps found."))
+            return
+        lines = []
+        for dump in dumps[:10]:  # Show last 10
+            lines.append(
+                f"<b>Dump {dump['dump_id']}</b>: {dump['user_count'] if 'user_count' in dump else '?'} users, "
+                f"type: {dump.get('dump_type', '?')}, "
+                f"created: {dump.get('created_at', '?')}, "
+                f"status: {dump.get('status', '?')}"
+            )
+        await reply_html(client, message, msgs.info("\n".join(lines)))
+
+    # /dumps - List all dumps (owner + sudo)
+    @app.on_message(filters.command("dumps") & NOT_CHANNEL)
+    @security_service.check_sudo_security  # type: ignore
+    @safe_handler
+    async def cmd_dumps(client: Client, message: Message):
+        from services import security as sec_svc
+        dumps = await sec_service.list_security_dumps()
+        if not dumps:
+            await reply_html(client, message, msgs.info("No security dumps found."))
+            return
+        lines = [f"Dump ID: {d['dump_id']} | Type: {d.get('dump_type', '?')} | Users: {d.get('user_count', '?')} | Status: {d.get('status', '?')} | Created: {d.get('created_at', '?')}" for d in dumps]
+        await reply_html(client, message, msgs.info("\n".join(lines)))
+
+    # /securityset - View security config (owner only)
+    @app.on_message(filters.command("securityset") & NOT_CHANNEL)
+    @owner_only
+    @safe_handler
+    async def cmd_securityset(client: Client, message: Message):
+        from services import security as sec_svc
+        from services.settings import get_global_ban_on_exploit, get_secret_detection_enabled
+
+        cfg = await sec_service.get_security_config() if hasattr(sec_service, 'get_security_config') else {}
+        # Fallback to settings
+        st_cfg = await settings_service.get_settings()
+        lines = [
+            f"<b>Secret detection:</b> {'✅ Enabled' if st_cfg.get('secret_detection_enabled', True) else '❌ Disabled'}",
+            f"<b>Global ban on exploit:</b> {'✅ Enabled' if st_cfg.get('global_ban_on_exploit', True) else '❌ Disabled'}",
+            f"<b>Clear recovery balance:</b> {st_cfg.get('security', {}).get('clear_recovery_balance', 20000)}",
+        ]
+        await reply_html(client, message, msgs.info("\n".join(lines)))
 
     # ---------------- GROUP CONFIG (owner + sudo) ----------------
     @app.on_message(filters.command("setchat") & NOT_CHANNEL)
@@ -780,147 +959,6 @@ def register(app: Client) -> None:
             ),
         )
 
-# ---------------- SECURITY COMMANDS ----------------
-    @app.on_message(filters.command("gban") & NOT_CHANNEL)
-    @security_sudo_or_owner
-    @safe_handler
-    async def cmd_gban(client: Client, message: Message):
-        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
-        if target is None:
-            return
-        from services import security as security_service
-
-        reason = message.command[2] if len(message.command) > 2 else None
-        await security_service.global_ban(target, reason or "Global ban by admin")
-        await users_db.set_user_flags(target, is_banned=True)
-        await reply_html(
-            client, message,
-            msgs.success(f"User <code>{target}</code> globally banned."),
-        )
-
-    @app.on_message(filters.command("ungban") & NOT_CHANNEL)
-    @security_sudo_or_owner
-    @safe_handler
-    async def cmd_ungban(client: Client, message: Message):
-        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
-        if target is None:
-            return
-        from services import security as security_service
-
-        await security_service.global_unban(target)
-        await users_db.set_user_flags(target, is_banned=False)
-        await reply_html(
-            client, message,
-            msgs.success(f"User <code>{target}</code> unglobally banned."),
-        )
-
-    @app.on_message(filters.command("clear") & NOT_CHANNEL)
-    @security_owner_only
-    @safe_handler
-    async def cmd_clear(client: Client, message: Message):
-        from services import security as security_service
-
-        ok = await security_service.manual_clear(message.from_user.id)
-        if ok:
-            await reply_html(client, message, msgs.success("Recovery balance cleared manually."))
-        else:
-            await reply_html(client, message, msgs.error("Nothing to clear or already at default."))
-
-    @app.on_message(filters.command("restore") & NOT_CHANNEL)
-    @security_owner_only
-    @safe_handler
-    async def cmd_restore(client: Client, message: Message):
-        args = message.command[1:]
-        if not args:
-            await reply_html(client, message, msgs.error("Usage: <code>/restore DUMP-ID</code>"))
-            return
-        dump_id = args[0]
-        from services import security as security_service
-
-        ok = await security_service.manual_restore(message.from_user.id, dump_id)
-        if ok:
-            await reply_html(client, message, msgs.success(f"Restored from dump <code>{dump_id}</code>."))
-        else:
-            await reply_html(client, message, msgs.error(f"Dump <code>{dump_id}</code> not found or cannot restore."))
-
-    @app.on_message(filters.command("recover") & NOT_CHANNEL)
-    @security_owner_only
-    @safe_handler
-    async def cmd_recover(client: Client, message: Message):
-        args = message.command[1:]
-        if not args:
-            await reply_html(client, message, msgs.error("Usage: <code>/recover DUMP-ID</code>"))
-            return
-        dump_id = args[0]
-        from services import security as security_service
-
-        ok = await security_service.manual_recover(message.from_user.id, dump_id)
-        if ok:
-            await reply_html(client, message, msgs.success(f"Recovered from dump <code>{dump_id}</code>."))
-        else:
-            await reply_html(client, message, msgs.error(f"Dump <code>{dump_id}</code> not found or cannot recover."))
-
-    @app.on_message(filters.command("restorecase") & NOT_CHANNEL)
-    @security_owner_only
-    @safe_handler
-    async def cmd_restorecase(client: Client, message: Message):
-        args = message.command[1:]
-        if not args:
-            await reply_html(client, message, msgs.error("Usage: <code>/restorecase CASE-ID</code>"))
-            return
-        case_id = args[0]
-        from services import security as security_service
-
-        ok = await security_service.manual_restorecase(message.from_user.id, case_id)
-        if ok:
-            await reply_html(client, message, msgs.success(f"Restored from case <code>{case_id}</code>."))
-        else:
-            await reply_html(client, message, msgs.error(f"Case <code>{case_id}</code> not found or cannot restore."))
-
-    @app.on_message(filters.command("dumpinfo") & NOT_CHANNEL)
-    @security_sudo_or_owner
-    @safe_handler
-    async def cmd_dumpinfo(client: Client, message: Message):
-        from services import security as security_service
-
-        dumps = await security_service.list_dumps()
-        if not dumps:
-            await reply_html(client, message, msgs.info("No security dumps found."))
-            return
-        lines = []
-        for dump in dumps:
-            lines.append(
-                f"<b>Dump {dump['dump_id']}</b>: {dump['user_count']} users, "
-                f"exploit count: {dump['exploit_count']}, "
-                f"created: {dump['created_at']}, "
-                f"used: {dump.get('used_count', 0)}/{dump.get('user_count', 0)}"
-            )
-        await reply_html(client, message, msgs.info("\n".join(lines)))
-
-    @app.on_message(filters.command("dumps") & NOT_CHANNEL)
-    @security_sudo_or_owner
-    @safe_handler
-    async def cmd_dumps(client: Client, message: Message):
-        from services import security as security_service
-
-        dumps = await security_service.list_dumps()
-        if not dumps:
-            await reply_html(client, message, msgs.info("No security dumps found."))
-            return
-        lines = [f"Dump ID: {d['dump_id']} | Users: {d['user_count']} | Exploits: {d['exploit_count']} | Created: {d['created_at']}" for d in dumps]
-        await reply_html(client, message, msgs.info("\n".join(lines)))
-
-    @app.on_message(filters.command("securityset") & NOT_CHANNEL)
-    @security_owner_only
-    @safe_handler
-    async def cmd_securityset(client: Client, message: Message):
-        from services import security as security_service
-
-        cfg = await security_service.get_security_config()
-        lines = [
-            f"<b>Secret detection:</b> {'✅ Enabled' if cfg.get('secret_detection_enabled', True) else '❌ Disabled'}",
-            f"<b>Global ban on exploit:</b> {'✅ Enabled' if cfg.get('global_ban_on_exploit', True) else '❌ Disabled'}",
-            f"<b>Clear recovery balance:</b> {cfg.get('clear_recovery_balance', 20_000)}",
-        ]
-        await reply_html(client, message, msgs.info("\n".join(lines)))
-
+    # ---------------- SECRET DETECTION MIDDLEWARE ----------------
+    # Note: Secret detection is handled by the middleware in utils/chat.py
+    # The /detect command is not a user command - it's handled on-message
