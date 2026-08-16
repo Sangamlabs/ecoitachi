@@ -139,6 +139,12 @@ def register(app: Client) -> None:
             await reply_html(client, message, msgs.warning("That user is not a sudo admin."))
 
     # ---------------- SUDO / ADMIN ----------------
+    @app.on_message(filters.command("adminhelp") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler(feature="admin")
+    async def cmd_adminhelp(client: Client, message: Message):
+        await reply_html(client, message, msgs.admin_help())
+
     @app.on_message(filters.command("give") & NOT_CHANNEL)
     @sudo_only
     @safe_handler
@@ -434,6 +440,80 @@ def register(app: Client) -> None:
             duration=max(30, duration),
         )
         await reply_html(client, message, msgs.success("Mines settings updated."))
+
+    # ---------------- REWARDS ----------------
+    @app.on_message(filters.command("setreward") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler(feature="admin")
+    async def cmd_setreward(client: Client, message: Message):
+        await ensure_user(client, message)
+        args = message.command[1:]
+        if len(args) < 2 or args[0].lower() not in ("daily", "weekly", "monthly"):
+            await reply_html(
+                client, message,
+                msgs.error("Usage: <code>/setreward daily|weekly|monthly amount</code>"),
+            )
+            return
+        kind = args[0].lower()
+        amount, err = parse_amount_or_error(args[1])
+        if err:
+            await reply_html(client, message, msgs.error(err))
+            return
+        current = await settings_service.get_rewards()
+        entry = dict(current.get(kind, {}))
+        entry["amount"] = amount
+        await settings_service.update_rewards(**{kind: entry})
+        await reply_html(
+            client, message,
+            msgs.success(f"{kind.title()} reward set to <code>{format_money(amount)}</code>."),
+        )
+
+    # ---------------- ROB ----------------
+    ROB_FIELDS = {
+        "win_prob": ("success_probability", float),
+        "percent": ("bank_percentage", float),
+        "min": ("minimum_amount", int),
+        "max": ("maximum_amount", int),
+        "cooldown": ("cooldown", int),
+    }
+
+    @app.on_message(filters.command("robset") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler(feature="admin")
+    async def cmd_robset(client: Client, message: Message):
+        await ensure_user(client, message)
+        args = message.command[1:]
+        if len(args) < 2 or args[0].lower() not in ROB_FIELDS:
+            await reply_html(
+                client, message,
+                msgs.error(
+                    "Usage: <code>/robset win_prob|percent|min|max|cooldown value</code>"
+                ),
+            )
+            return
+        field, raw = args[0].lower(), args[1]
+        key, parser = ROB_FIELDS[field]
+        try:
+            value = parser(raw)
+        except ValueError:
+            await reply_html(client, message, msgs.error("Invalid numeric value."))
+            return
+        if field == "win_prob" and not is_safe_probability(value):
+            await reply_html(client, message, msgs.error("Win probability must be between 0 and 1."))
+            return
+        if field == "percent" and not is_safe_percent(value):
+            await reply_html(client, message, msgs.error("Percent must be between 0 and 100."))
+            return
+        if value < 0:
+            await reply_html(client, message, msgs.error("Value cannot be negative."))
+            return
+        current = await settings_service.get_game_settings("rob")
+        current[key] = value
+        if not validate_min_max(int(current.get("minimum_amount", 0)), int(current.get("maximum_amount", 0))):
+            await reply_html(client, message, msgs.error("Minimum amount cannot exceed maximum amount."))
+            return
+        await settings_service.update_game_settings("rob", **current)
+        await reply_html(client, message, msgs.success(f"Rob <code>{field}</code> set to {value}."))
 
     @app.on_message(filters.command("freeze") & NOT_CHANNEL)
     @sudo_only

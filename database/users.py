@@ -43,14 +43,22 @@ async def get_or_create_user(
     username: str | None = None,
     first_name: str | None = None,
 ) -> dict[str, Any]:
-    """Return the user document, creating it with starting balance if new."""
+    """Return the user document, creating it with the starting balance if new.
+
+    The starting balance is read from the centralized settings collection so
+    admins can change the welcome grant without touching code.
+    """
     users = mongo.db[COLLECTION]
     now = int(time.time())
+    from services import settings as settings_service  # lazy: avoids import-order surprises
+
+    starting_balance = int((await settings_service.get_settings()).get("starting_balance", 0))
     doc = await users.find_one_and_update(
         {"user_id": user_id},
         {
             "$setOnInsert": {
                 **ZERO_USER,
+                "wallet": starting_balance,
                 "user_id": user_id,
                 "username": username,
                 "first_name": first_name,

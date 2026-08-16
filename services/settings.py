@@ -15,7 +15,7 @@ COLLECTION = "settings"
 
 DEFAULTS: dict[str, Any] = {
     "currency": "₹ UN",
-    "starting_balance": 0,
+    "starting_balance": 50_000,  # ₹500 welcome grant for new users
     "bank_interest_rate": 2.0,
     "bank_interest_interval_hours": 24,
     "withdrawal_tax_rate": 5.0,
@@ -23,6 +23,11 @@ DEFAULTS: dict[str, Any] = {
     "tax_distribution": {
         "enabled": True,
         "percentages": [25.0, 18.0, 13.0, 10.0, 8.0, 7.0, 6.0, 5.0, 4.0, 4.0],
+    },
+    "rewards": {
+        "daily": {"amount": 50_000, "cooldown": 86_400},
+        "weekly": {"amount": 300_000, "cooldown": 604_800},
+        "monthly": {"amount": 1_200_000, "cooldown": 2_592_000},
     },
 }
 
@@ -61,6 +66,11 @@ async def get_default_cooldown() -> int:
     return int(settings.get("default_game_cooldown", 60))
 
 
+async def get_starting_balance() -> int:
+    settings = await get_settings()
+    return int(settings.get("starting_balance", 0))
+
+
 async def get_tax_distribution() -> dict[str, Any]:
     settings = await get_settings()
     return dict(settings.get("tax_distribution", DEFAULTS["tax_distribution"]))
@@ -74,6 +84,22 @@ async def get_game_settings(game: str) -> dict[str, Any]:
     if doc:
         defaults.update({k: v for k, v in doc.items() if k not in ("_id", "key")})
     return defaults
+
+
+async def get_rewards() -> dict[str, Any]:
+    """Return the configured daily/weekly/monthly reward amounts and cooldowns."""
+    settings = await get_settings()
+    return dict(settings.get("rewards", DEFAULTS["rewards"]))
+
+
+async def update_rewards(**changes: dict[str, Any]) -> dict[str, Any]:
+    """Overwrite one or more reward entries (e.g. ``update_rewards(daily={...})``)."""
+    rewards = await get_rewards()
+    rewards.update(changes)
+    await mongo.db[COLLECTION].update_one(
+        {"key": "global"}, {"$set": {"rewards": rewards}}, upsert=True
+    )
+    return rewards
 
 
 async def update_game_settings(game: str, **changes: Any) -> dict[str, Any]:
@@ -128,6 +154,13 @@ GAME_DEFAULTS: dict[str, dict[str, Any]] = {
         "multiplier": 2.0,
         "minimum_bet": 100,
         "maximum_bet": 100_000,
+        "cooldown": 60,
+    },
+    "rob": {
+        "success_probability": 0.5,
+        "bank_percentage": 10.0,
+        "minimum_amount": 100,
+        "maximum_amount": 500_000,
         "cooldown": 60,
     },
 }

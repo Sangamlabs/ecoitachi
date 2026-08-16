@@ -33,6 +33,9 @@ from services import (  # noqa: E402
     economy,
     group_config,
     interest,
+    rob as rob_service,
+    rewards,
+    settings as settings_service,
     stocks,
     tax,
 )
@@ -70,6 +73,8 @@ async def clean_db():
     await db["stocks"].delete_many({})
     await db["stock_holdings"].delete_many({})
     await db["group_config"].delete_many({})
+    await db["settings"].delete_many({})
+    await settings_service.update_settings(starting_balance=0)
     await users_db.get_or_create_user(A, "user_a", "User A")
     await users_db.get_or_create_user(B, "user_b", "User B")
     yield
@@ -81,6 +86,23 @@ async def test_user_creation_and_give():
     await economy.admin_give(A, 5000, 1)
     bal = await economy.get_balance(A)
     assert bal["wallet"] == 5000
+
+
+async def test_starting_balance_applied_to_new_users():
+    await settings_service.update_settings(starting_balance=50_000)
+    fresh = 9301
+    await mongo.db["users"].delete_many({"user_id": fresh})
+    doc = await users_db.get_or_create_user(fresh, "fresh_user", "Fresh")
+    assert doc["wallet"] == 50_000
+    assert doc["total_earned"] == 0
+    assert (await users_db.get_user(fresh))["wallet"] == 50_000
+    await mongo.db["users"].delete_many({"user_id": fresh})
+
+
+async def test_starting_balance_not_reapplied_on_existing_user():
+    await settings_service.update_settings(starting_balance=50_000)
+    doc = await users_db.get_or_create_user(A, "user_a", "User A")  # already exists (wallet 0)
+    assert doc["wallet"] == 0
 
 
 async def test_pay():
@@ -222,3 +244,86 @@ async def test_mines_session_bound_to_starting_chat():
 
     result = await mines_game.reveal(sid, A, safe_tiles[0], chat_id=-100_222)
     assert result["game_over"] is False
+
+
+async def test_daily_reward_claim_and_cooldown():
+    await cooldown_manager.clear("daily", A)
+    result = await rewards.claim(A, "daily")
+    assert result["kind"] == "daily" and result["amount"] > 0
+    assert (await economy.get_balance(A))["wallet"] == result["amount"]
+    with pytest.raises(game_engine.GameCooldownError):
+        await rewards.claim(A, "daily")
+    await cooldown_manager.clear("daily", A)
+
+
+async def test_weekly_and_monthly_reward_distinct_cooldowns():
+    await cooldown_manager.clear("weekly", A)
+    await cooldown_manager.clear("monthly", A)
+    weekly = await rewards.claim(A, "weekly")
+    monthly = await rewards.claim(A, "monthly")
+    assert weekly["amount"] > 0 and monthly["amount"] > 0
+    assert (await economy.get_balance(A))["wallet"] == weekly["amount"] + monthly["amount"]
+    with pytest.raises(game_engine.GameCooldownError):
+        await rewards.claim(A, "weekly")
+    with pytest.raises(game_engine.GameCooldownError):
+        await rewards.claim(A, "monthly")
+    await cooldown_manager.clear("weekly", A)
+    await cooldown_manager.clear("monthly", A)
+
+
+async def test_rob_success_moves_bank_to_wallet(monkeypatch):
+    monkeypatch.setattr("random.random", lambda: 0.0)
+    await economy.admin_give(A, 1_000_000, 1)
+    await bank.deposit(A, 400_000)
+    await economy.admin_give(B, 200_000, 1)
+    await bank.deposit(B, 200_000)
+    await cooldown_manager.clear("rob", A)
+
+    result = await rob_service.attempt(A, B)
+    assert result["success"] is True
+    assert result["stolen"] == 20_000  # 10% of 200k
+    assert (await economy.get_balance(B))["bank"] == 180_000
+    assert (await economy.get_balance(A))["wallet"] == 600_000 + 20_000
+
+    with pytest.raises(game_engine.GameCooldownError):
+        await rob_service.attempt(A, B)
+    await cooldown_manager.clear("rob", A)
+
+
+async def test_rob_failure_stolen_zero(monkeypatch):
+    monkeypatch.setattr("random.random", lambda: 0.999)
+    await economy.admin_give(A, 1_000_000, 1)
+    await economy.admin_give(B, 200_000, 1)
+    await bank.deposit(B, 200_000)
+    await cooldown_manager.clear("rob", A)
+
+    before = (await economy.get_balance(A))["wallet"]
+    result = await rob_service.attempt(A, B)
+    assert result["success"] is False and result["stolen"] == 0
+    assert (await economy.get_balance(A))["wallet"] == before
+    assert (await economy.get_balance(B))["bank"] == 200_000
+    await cooldown_manager.clear("rob", A)
+
+
+async def test_rob_self_and_empty_bank_rejected():
+    await cooldown_manager.clear("rob", A)
+    with pytest.raises(rob_service.RobError):
+        await rob_service.attempt(A, A)
+    with pytest.raises(rob_service.RobError):
+        await rob_service.attempt(A, B)  # B has no bank
+    await cooldown_manager.clear("rob", A)
+
+
+async def test_rob_max_cap(monkeypatch):
+    monkeypatch.setattr("random.random", lambda: 0.0)
+    await economy.admin_give(A, 1_000_000, 1)
+    await bank.deposit(A, 500_000)
+    await economy.admin_give(B, 10_000_000, 1)
+    await bank.deposit(B, 10_000_000)
+    await cooldown_manager.clear("rob", A)
+
+    result = await rob_service.attempt(A, B)
+    assert result["success"] is True
+    assert result["stolen"] == 500_000  # capped at default maximum_amount
+    assert (await economy.get_balance(B))["bank"] == 9_500_000
+    await cooldown_manager.clear("rob", A)

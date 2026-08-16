@@ -14,7 +14,8 @@ can be added without rewriting the economy engine.
   (target resolution: reply user id → explicit id → username)
 - **Centralized group config** — per-chat enable/disable of economy, games,
   leaderboard and admin commands via `/setchat` (extensible without touching handlers)
-- **User profiles** — auto-created on first interaction (`/start`, `/profile`)
+- **User profiles** — auto-created on first interaction (`/start`, `/profile`);
+  every new user receives a **₹500 welcome grant** (`starting_balance`, admin-configurable)
 - **Wallet & payments** — `/bal`, `/pay`, transaction engine with unique IDs
 - **Leaderboard** — net-worth ranking (wallet + bank + live stock value), modular categories
 - **Full bank system** — `/deposit`, `/withdraw`, configurable interest (24h) and withdrawal tax
@@ -25,10 +26,15 @@ can be added without rewriting the economy engine.
 - **Games** — `/fly` (configurable difficulties), `/mines` (6×6 inline board), `/bet`;
   central game engine enforces cooldowns, bet limits, one-active-game and double-settlement protection;
   mines callbacks verify user + chat + message ownership
+- **Robbery** — `/rob @user` steals a configurable percentage of a victim's bank
+  (clamped min/max) with a random police-catch failure chance and the shared 60s cooldown
+- **Free rewards** — `/daily`, `/weekly`, `/monthly` claim admin-configurable amounts
+  on 24h / 7d / 30d cooldowns
 - **Owner + Sudo admin system** — numeric-ID based permission service with decorators;
-  Telegram group-admin status is separate from the bot's admin hierarchy
-- **Admin configuration** — interest/tax rates, fly/mines/bet tuning, freeze/ban, give/remove,
-  economy stats (`/econstats`), group config (`/setchat`)
+  Telegram group-admin status is separate from the bot's admin hierarchy; `/adminhelp`
+  lists every admin command for owner and sudo
+- **Admin configuration** — interest/tax rates, fly/mines/bet/rob tuning, reward amounts,
+  freeze/ban, give/remove, economy stats (`/econstats`), group config (`/setchat`)
 - **Centralized HTML messaging** — every message is built by `utils/messages.py` and sent via
   `utils/sender.py` with Telegram HTML parse mode; dynamic content is always escaped
 - **Catbox media abstraction** — `services/media.py` for future media commands (graceful when disabled)
@@ -202,11 +208,13 @@ docker run -d --env-file .env --name unoitachi unoitachi-bot
 | Group | Commands |
 | --- | --- |
 | Economy | `/start` `/profile` `/bal [@user\|id]` `/pay @user\|id amount` `/leader` — reply-based `/bal` `/pay` work in every chat |
+| Rewards | `/daily` `/weekly` `/monthly` — free currency on 24h / 7d / 30d cooldowns |
 | Bank | `/deposit amount` `/withdraw amount` `/bank` `/transactions` |
 | Market | `/stocklist` `/stock SYMBOL` `/buystock SYMBOL qty` `/sellstock SYMBOL qty` `/portfolio` |
 | Games | `/fly low\|medium\|high amount` `/mines amount` `/bet amount` |
+| Crime | `/rob @user\|id` — steal from a user's bank (reply-based; 60s cooldown, random police catch) |
 | Owner | `/addsudo @user` `/rsudo @user` (private chat only) |
-| Admin (owner + sudo) | `/give @user amount` `/remove @user amount` `/setinterest rate` `/settax rate` `/banksettings` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
+| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/setinterest rate` `/settax rate` `/banksettings` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
 
 ## Admin system
 

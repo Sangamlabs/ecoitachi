@@ -198,6 +198,25 @@ async def deposit(user_id: int, amount: int) -> dict[str, int]:
     return {"wallet": result.get("wallet", 0), "bank": result.get("bank", 0)}
 
 
+async def bank_debit(user_id: int, amount: int) -> dict[str, Any]:
+    """Atomically remove UN from a user's bank (no tax) with a balance guard.
+
+    Used by theft-style mechanics (e.g. rob) that must debit the victim's bank
+    directly instead of routing through a taxed withdrawal.
+    """
+    if amount <= 0:
+        raise MoneyError("Amount must be positive.")
+    user = await _require_user(user_id)
+    result = await mongo.db[users_db.COLLECTION].find_one_and_update(
+        {"user_id": user_id, "bank": {"$gte": amount}},
+        {"$inc": {"bank": -amount}, "$set": {"updated_at": int(__import__("time").time())}},
+        return_document=True,
+    )
+    if result is None:
+        raise InsufficientBalance(amount, user.get("bank", 0))
+    return {"wallet": result.get("wallet", 0), "bank": result.get("bank", 0)}
+
+
 async def withdraw(user_id: int, amount: int, tax_rate: float) -> dict[str, Any]:
     """Bank → Wallet applying withdrawal tax.
 

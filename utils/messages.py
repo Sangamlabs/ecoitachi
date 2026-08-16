@@ -53,6 +53,8 @@ def start(user: dict[str, Any]) -> str:
         f"Welcome, <b>{name}</b>! You have joined the UNOITACHI economy.\n\n"
         f"<blockquote>"
         f"💵 Work the market, bank your earnings and grow your net worth.\n"
+        f"🎁 Claim free currency with <code>/daily</code>, <code>/weekly</code> and "
+        f"<code>/monthly</code>.\n"
         f"Use <code>/help</code> to see everything you can do."
         f"</blockquote>"
     )
@@ -80,8 +82,13 @@ def help_text() -> str:
         f"<b>🎮 Games</b>\n"
         f"<code>/fly low|medium|high amount</code>\n"
         f"<code>/mines amount</code> — 6x6 mines board\n"
-        f"<code>/bet amount</code> — coin bet\n\n"
-        f"<i>Every game has a 60s cooldown. Bet within your wallet balance.</i>"
+        f"<code>/bet amount</code> — coin bet\n"
+        f"<code>/rob @user</code> — steal from a user's bank\n\n"
+        f"<b>🎁 Free Rewards</b>\n"
+        f"<code>/daily</code> — free currency every 24h\n"
+        f"<code>/weekly</code> — free currency every 7 days\n"
+        f"<code>/monthly</code> — free currency every 30 days\n\n"
+        f"<i>Every game and /rob has a 60s cooldown. Bet within your wallet balance.</i>"
     )
 
 
@@ -170,7 +177,7 @@ def bank(user: dict[str, Any], settings: dict[str, Any], tax_pool: int) -> str:
 
 def transaction_row(tx: dict[str, Any]) -> str:
     sign = {"PAY": "→", "GAME_LOSS": "−", "ADMIN_REMOVE": "−", "STOCK_BUY": "−",
-            "WITHDRAW": "−", "TAX": "−"}.get(tx.get("type", ""), "＋")
+            "WITHDRAW": "−", "TAX": "−", "ROBBED": "−"}.get(tx.get("type", ""), "＋")
     amount = tx.get("amount", 0)
     return (
         f"<code>{escape(tx.get('type', 'UNKNOWN'))}</code> {sign} "
@@ -260,6 +267,82 @@ def bet_result(bet: int, won: bool, multiplier: float, payout: int, tx_id: str) 
 
 def game_cooldown(game: str, remaining: int) -> str:
     return f"<b>⏳ {escape(game.title())} is on cooldown.</b>\n<i>Try again in {remaining}s.</i>"
+
+
+def _cooldown_label(seconds: int) -> str:
+    days, rem = divmod(int(seconds), 86_400)
+    hours = rem // 3600
+    if days:
+        return f"{days}d"
+    if hours:
+        return f"{hours}h"
+    return f"{int(seconds) // 60}m"
+
+
+def reward_claimed(kind: str, amount: int, cooldown: int) -> str:
+    return (
+        f"<b>🎁 {escape(kind.title())} REWARD</b>\n"
+        f"<blockquote>You claimed <b>{format_money(amount)}</b>.\n"
+        f"Next claim in {_cooldown_label(cooldown)}.</blockquote>"
+    )
+
+
+def rob_result(result: dict[str, Any], robber: dict[str, Any], victim: dict[str, Any]) -> str:
+    victim_name = _user_name(victim)
+    if result["success"]:
+        return (
+            f"<b>🦹 ROBBERY SUCCESS</b>\n"
+            f"<blockquote>You stole <b>{format_money(result['stolen'])}</b> from {victim_name}.\n"
+            f"They had {format_money(result['target_bank_before'])} banked.</blockquote>\n"
+            f"<i>Next robbery in {result['cooldown']}s.</i>"
+        )
+    return (
+        f"<b>🚔 ROBBERY FAILED</b>\n"
+        f"<blockquote>The police caught you robbing {victim_name}.\n"
+        f"You got nothing.</blockquote>\n"
+        f"<i>Next robbery in {result['cooldown']}s.</i>"
+    )
+
+
+def robbery_notice(victim: dict[str, Any], robber: dict[str, Any], stolen: int) -> str:
+    return (
+        f"<b>🦹 YOU WERE ROBBED</b>\n"
+        f"{_link(robber['user_id'], _user_name(robber))} stole "
+        f"<b>{format_money(stolen)}</b> from your bank!"
+    )
+
+
+def admin_help() -> str:
+    return (
+        f"<b>🛠 {CMD} — ADMIN HELP</b>\n"
+        f"<i>Owner + sudo admins only.</i>\n\n"
+        f"<b>🛡 Permissions</b>\n"
+        f"<code>/addsudo @user</code> — add sudo (owner only)\n"
+        f"<code>/rsudo @user</code> — remove sudo (owner only)\n\n"
+        f"<b>💰 Economy</b>\n"
+        f"<code>/give @user amount</code> — give money\n"
+        f"<code>/remove @user amount</code> — take money\n\n"
+        f"<b>🏦 Bank</b>\n"
+        f"<code>/setinterest rate</code> — interest % per 24h\n"
+        f"<code>/settax rate</code> — withdrawal tax %\n"
+        f"<code>/banksettings</code> — view bank settings\n\n"
+        f"<b>🎮 Games</b>\n"
+        f"<code>/flyset low|medium|high field value</code>\n"
+        f"<code>/flytrap difficulty 8 values</code>\n"
+        f"<code>/betset win_prob multiplier min_bet max_bet [cooldown]</code>\n"
+        f"<code>/minestrap ...</code> — mines tuning\n"
+        f"<code>/robset field value</code> — rob tuning\n\n"
+        f"<b>🎁 Rewards</b>\n"
+        f"<code>/setreward daily|weekly|monthly amount</code>\n\n"
+        f"<b>👥 Users</b>\n"
+        f"<code>/freeze @user</code> / <code>/unfreeze @user</code>\n"
+        f"<code>/ban @user</code> / <code>/unban @user</code>\n"
+        f"<code>/userinfo @user</code> — user details\n\n"
+        f"<b>⚙️ Group config</b>\n"
+        f"<code>/setchat [chat_id] [setting] [on|off]</code>\n\n"
+        f"<b>📊 Stats</b>\n"
+        f"<code>/econstats</code> — economy stats"
+    )
 
 
 def admin_stats(stats: dict[str, Any]) -> str:

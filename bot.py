@@ -25,6 +25,7 @@ COMMAND_REGISTRY = [
     "handlers.bank",
     "handlers.stocks",
     "handlers.games",
+    "handlers.rewards",
     "handlers.admin",
 ]
 
