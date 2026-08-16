@@ -12,7 +12,7 @@ from handlers.common import ensure_user, safe_handler
 from services import economy, leaderboard as leaderboard_service, rob as rob_service
 from services import tax as tax_service, transaction as tx_service
 from utils import messages as msgs
-from utils.sender import reply_html
+from utils.sender import reply_html, schedule_delete
 from utils.validators import parse_amount_or_error, parse_target_arg, target_from_message
 
 logger = logging.getLogger(__name__)
@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 # Commands work in DM, groups and supergroups (never channels).  The chat gate
 # in utils.chat enforces per-chat feature toggles centrally.
 NOT_CHANNEL = ~filters.channel & ~filters.bot
+
+# Leaderboard results self-destruct after this many seconds.
+LEADERBOARD_AUTO_DELETE_SECONDS = 180
 
 
 def register(app: Client) -> None:
@@ -193,4 +196,7 @@ def register(app: Client) -> None:
             (u["user_id"], leaderboard_service.name_of(u), await leaderboard_service.net_worth(u))
             for u in top
         ]
-        await reply_html(client, message, msgs.leaderboard(entries))
+        sent = await reply_html(client, message, msgs.leaderboard(entries))
+        # Auto-delete after 3 minutes so the tagged leaderboard post stops
+        # cluttering the chat for other users.
+        schedule_delete(client, sent, delay=LEADERBOARD_AUTO_DELETE_SECONDS)

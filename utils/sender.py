@@ -6,6 +6,7 @@ globally.  No handler should call ``message.reply`` directly with raw HTML.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from pyrogram import Client
@@ -15,6 +16,30 @@ from pyrogram.types import InlineKeyboardMarkup, Message
 logger = logging.getLogger(__name__)
 
 KWARGS = {"parse_mode": ParseMode.HTML}
+
+# Holds background deletion tasks so they are not garbage collected.
+_BG_TASKS: set[asyncio.Task] = set()
+
+
+async def _delete_after(client: Client, message: Message, delay: float) -> None:
+    await asyncio.sleep(delay)
+    try:
+        await message.delete()
+    except Exception as exc:
+        chat_id = message.chat.id if message.chat else None
+        logger.info("auto-delete skipped (chat=%s msg=%s): %s", chat_id, message.id, exc)
+
+
+def schedule_delete(client: Client, message: Message | None, delay: float = 180.0) -> None:
+    """Delete ``message`` (usually the bot's own reply) after ``delay`` seconds.
+
+    Runs in a fire-and-forget background task; failures are logged only.
+    """
+    if message is None:
+        return
+    task = asyncio.create_task(_delete_after(client, message, delay))
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
 
 
 async def reply_html(
