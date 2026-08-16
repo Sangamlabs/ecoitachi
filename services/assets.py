@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import math
 import time
+from html import escape as html_escape
 from typing import Any
 
 from database import assets as assets_db
@@ -264,6 +265,75 @@ async def buy(
         "total": total,
         "tx_id": tx_id,
     }
+
+
+async def grant_asset(
+    user_id: int,
+    asset_ref: str,
+    qty_raw: str,
+    *,
+    promo_id: str | None = None,
+    promo_code: str | None = None,
+) -> dict[str, Any]:
+    """Grant an asset holding for free (used by the promo engine).
+
+    ``asset_ref`` is matched by unique ``asset_id`` first, then by symbol.  The
+    exact asset is validated (active + tradeable) and the holding moves through
+    the asset data layer — never mutated directly by callers.
+    """
+    asset = await assets_db.get_asset_by_id(asset_ref)
+    if asset is None:
+        asset = await assets_db.get_asset(asset_ref)
+    if asset is None or not asset.get("is_active") or not asset.get("is_tradeable"):
+        raise AssetError(f"Asset <code>{html_escape(str(asset_ref))}</code> is not available.")
+    qty = parse_quantity(str(qty_raw), asset)
+
+    max_holding = asset.get("max_holding")
+    if max_holding:
+        holding = await holdings_db.get_holding(user_id, asset["asset_id"])
+        existing = float(holding.get("quantity", 0)) if holding else 0.0
+        if existing + qty > float(max_holding) + 1e-9:
+            raise AssetError(
+                f"Maximum holding for <code>{asset['symbol']}</code> is <b>{max_holding:g}</b>."
+            )
+
+    price = price_for(asset, await market_config(), "buy")
+    await holdings_db.add_holding(user_id, asset["asset_id"], asset["symbol"], qty, 0, price)
+    await _volume_inc(asset["symbol"])
+    await refresh_user_asset_value(user_id)
+    tx_id = await tx_service.record(
+        user_id=user_id,
+        ttype=tx_service.PROMO_ASSET,
+        amount=0,
+        balance_before=0,
+        balance_after=0,
+        metadata={
+            "asset_id": asset["asset_id"],
+            "symbol": asset["symbol"],
+            "quantity": qty,
+            "price": price,
+            "promo_id": promo_id,
+            "promo_code": promo_code,
+            "source": "PROMO",
+        },
+    )
+    return {
+        "asset_id": asset["asset_id"],
+        "symbol": asset["symbol"],
+        "name": asset.get("name", ""),
+        "emoji": asset.get("emoji", ""),
+        "quantity": qty,
+        "price": price,
+        "tx_id": tx_id,
+    }
+
+
+async def revoke_grant_asset(user_id: int, asset_id: str, quantity: float) -> None:
+    """Compensating removal of a promo-granted asset holding."""
+    asset = await assets_db.get_asset_by_id(asset_id)
+    price = int(asset.get("price", 0)) if asset else 0
+    await holdings_db.remove_holding(user_id, asset_id, quantity, price)
+    await refresh_user_asset_value(user_id)
 
 
 async def sell(

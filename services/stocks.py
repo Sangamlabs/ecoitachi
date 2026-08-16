@@ -135,6 +135,53 @@ async def buy_stock(user_id: int, symbol: str, qty_raw: str) -> dict[str, Any]:
     return {"symbol": asset["symbol"], "quantity": qty, "cost": cost, "tax": tax, "total": total, "price": price, "tx_id": tx_id}
 
 
+async def grant_stock(
+    user_id: int,
+    symbol: str,
+    qty_raw: str,
+    *,
+    promo_id: str | None = None,
+    promo_code: str | None = None,
+) -> dict[str, Any]:
+    """Grant a stock holding to a user for free (used by the promo engine).
+
+    Validates the stock exists and is active, then moves the holding through
+    the stock data layer (never mutated directly by callers).
+    """
+    qty = _parse_quantity(qty_raw)
+    asset = await get_asset(symbol)
+    if asset is None:
+        raise EconomyError(f"Stock <code>{symbol.upper()}</code> is not available.")
+    await stocks_db.add_holding(user_id, asset["symbol"], qty)
+    price = int(asset.get("price", 0))
+    tx_id = await tx_service.record(
+        user_id=user_id,
+        ttype=tx_service.PROMO_STOCK,
+        amount=0,
+        balance_before=0,
+        balance_after=0,
+        metadata={
+            "symbol": asset["symbol"],
+            "quantity": qty,
+            "price": price,
+            "promo_id": promo_id,
+            "promo_code": promo_code,
+            "source": "PROMO",
+        },
+    )
+    return {
+        "symbol": asset["symbol"],
+        "quantity": qty,
+        "price": price,
+        "tx_id": tx_id,
+    }
+
+
+async def revoke_grant_stock(user_id: int, symbol: str, quantity: float) -> None:
+    """Compensating removal of a promo-granted stock holding."""
+    await stocks_db.remove_holding(user_id, symbol.upper(), quantity)
+
+
 async def sell_stock(user_id: int, symbol: str, qty_raw: str) -> dict[str, Any]:
     """Sell holdings at current price; credits go to the wallet."""
     qty = _parse_quantity(qty_raw)
