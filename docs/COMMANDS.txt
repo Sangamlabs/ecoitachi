@@ -689,6 +689,78 @@ USERS
     Full account report: wallet, bank, net worth, total earned/spent,
     monthly rank, transaction count, and BANNED/FROZEN badges.
 
+SECURITY COMMANDS (owner + sudo)
+--------------------------------------------------------------------------------
+/gban @user | /gban user_id | reply to a user + /gban
+    Globally ban a user. They cannot use the bot in any chat.
+    Sudo + owner only. Optionally add a reason as the 3rd argument:
+        /gban @sangam exploit_detected
+    Also bans the user from the local economy automatically.
+    Example: /gban @sangam 0day vulnerability
+
+/ungban @user | /ungban user_id | reply to a user + /ungban
+    Remove a global ban. Sudo + owner only.
+    Example: /ungban @sangam
+
+/clear
+    Manually clear a user's recovery balance to the default threshold.
+    Owner only. This does NOT ban or freeze the user; it only resets
+    the recovery balance that would trigger automatic /clear.
+    Example: /clear
+
+/restore DUMP-ID
+    Restore a user's economy data from a security dump. Owner only.
+    The dump ID must exist in the security dumps list.
+    Example: /restore dump_2024_001
+
+/recover DUMP-ID
+    Recover a user from a security dump. Owner only.
+    Same as /restore but with different semantic intent.
+    Example: /recover dump_2024_001
+
+/restorecase CASE-ID
+    Restore a user from a security case. Owner only.
+    Cases are different from dumps — used for specific incident recovery.
+    Example: /restorecase case_2024_001
+
+/dumpinfo
+    Show details of all security dumps. Sudo + owner only.
+    Lists dump IDs, user counts, exploit counts, and creation timestamps.
+    Example: /dumpinfo
+
+/dumps
+    List all security dump IDs with basic info. Sudo + owner only.
+    Shows brief overview of each dump.
+    Example: /dumps
+
+/securityset
+    View and edit security configuration. Owner only.
+    Current settings:
+        • Secret detection: enabled/disabled
+        • Global ban on exploit: enabled/disabled
+        • Clear recovery balance: [number]
+    Example: /securityset
+
+USERS
+--------------------------------------------------------------------------------
+/freeze @user
+    Freeze a user. They keep their money but cannot spend it (games, pay,
+    rob, withdraw are blocked). Their balance stays intact.
+
+/unfreeze @user
+    Remove a freeze.
+
+/ban @user
+    Full economy ban: the user cannot use any economy command at all.
+    You cannot ban yourself.
+
+/unban @user
+    Remove a ban.
+
+/userinfo @user
+    Full account report: wallet, bank, net worth, total earned/spent,
+    monthly rank, transaction count, and BANNED/FROZEN badges.
+
 STATS
 --------------------------------------------------------------------------------
 /econstats
