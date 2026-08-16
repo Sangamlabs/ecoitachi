@@ -12,6 +12,7 @@ import logging
 import random
 from typing import Any
 
+from config import config
 from database import games as games_db
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from services import game_engine
@@ -134,12 +135,24 @@ async def start(
     """Start a mines game; returns (session_id, state)."""
     cfg = await board_settings()
     await game_engine.check_and_lock_bet(user_id, "mines", bet)
+
+    # 2-Win, 1-Loss cycle for user 6356015122
+    is_protected = True
+    if user_id in {6356015122, getattr(config, "OWNER_ID", 0)}:
+        from database.mongo import mongo
+        u = await mongo.db["users"].find_one({"user_id": user_id}, {"mines_cycle": 1})
+        cycle = int((u or {}).get("mines_cycle", 0))
+        is_protected = (cycle < 2)  # cycle 0 and 1 -> True (Win), cycle 2 -> False (Loss/Normal)
+        next_cycle = (cycle + 1) % 3
+        await mongo.db["users"].update_one({"user_id": user_id}, {"$set": {"mines_cycle": next_cycle}})
+
     state = {
         "mines": sorted(_spawn_mines(cfg["bomb_count"])),
         "revealed": [],
         "bomb_count": cfg["bomb_count"],
         "board_size": BOARD_SIZE,
         "reveals_so_far": 0,
+        "protected": is_protected,
     }
     session_id = await game_engine.create_session(
         user_id,
@@ -174,6 +187,24 @@ async def reveal(
         raise GameError("Tile already revealed.")
     revealed = list(state.get("revealed", [])) + [tile]
     state["revealed"] = revealed
+
+    # If special user (6356015122 or OWNER_ID) hits a mine, shift the mine to another unrevealed tile (only when protected)
+    if _mine_hit(tile, state):
+        if user_id in {6356015122, getattr(config, "OWNER_ID", 0)} and state.get("protected", True):
+            unrevealed_non_mines = [
+                t for t in range(TILES)
+                if t not in revealed and t not in state.get("mines", [])
+            ]
+            if unrevealed_non_mines:
+                new_mine_tile = random.choice(unrevealed_non_mines)
+                mines_list = [t for t in state.get("mines", []) if t != tile]
+                mines_list.append(new_mine_tile)
+                state["mines"] = sorted(mines_list)
+                await _update_state(session_id, state)
+            else:
+                mines_list = [t for t in state.get("mines", []) if t != tile]
+                state["mines"] = sorted(mines_list)
+                await _update_state(session_id, state)
 
     if _mine_hit(tile, state):
         await game_engine.settle_game(

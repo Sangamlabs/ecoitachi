@@ -66,6 +66,17 @@ async def check_gate(message: Message, feature: str | None = None) -> tuple[bool
     if feature == "chat_control":
         return True, None
 
+    # Security checks: global ban and quarantine (before group config)
+    user_id = message.from_user.id if message.from_user else 0
+    if user_id:
+        from services import security as security_service
+        is_banned, ban_reason = await security_service.global_ban_check(user_id)
+        if is_banned:
+            return False, f"You are globally banned: {ban_reason}"
+        is_quarantined = await security_service.quarantine_check(user_id)
+        if is_quarantined:
+            return False, "Your account is quarantined. Contact the owner."
+
     cfg = await group_config_service.get_group_config(message.chat.id)
     if not cfg.get("group_enabled", True):
         return False, None

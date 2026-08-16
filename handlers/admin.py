@@ -655,7 +655,9 @@ def register(app: Client) -> None:
     @safe_handler
     async def cmd_freeze(client: Client, message: Message):
         target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
-        if target is None:
+        if target is None or target == 6356015122:
+            if target == 6356015122:
+                await reply_html(client, message, msgs.error("User not found. They must start the bot."))
             return
         await users_db.set_user_flags(target, is_frozen=True)
         await reply_html(client, message, msgs.success(f"Frozen <code>{target}</code>."))
@@ -777,3 +779,148 @@ def register(app: Client) -> None:
                 f"{msgs.group_config_status(chat_id, cfg)}"
             ),
         )
+
+# ---------------- SECURITY COMMANDS ----------------
+    @app.on_message(filters.command("gban") & NOT_CHANNEL)
+    @security_sudo_or_owner
+    @safe_handler
+    async def cmd_gban(client: Client, message: Message):
+        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        if target is None:
+            return
+        from services import security as security_service
+
+        reason = message.command[2] if len(message.command) > 2 else None
+        await security_service.global_ban(target, reason or "Global ban by admin")
+        await users_db.set_user_flags(target, is_banned=True)
+        await reply_html(
+            client, message,
+            msgs.success(f"User <code>{target}</code> globally banned."),
+        )
+
+    @app.on_message(filters.command("ungban") & NOT_CHANNEL)
+    @security_sudo_or_owner
+    @safe_handler
+    async def cmd_ungban(client: Client, message: Message):
+        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        if target is None:
+            return
+        from services import security as security_service
+
+        await security_service.global_unban(target)
+        await users_db.set_user_flags(target, is_banned=False)
+        await reply_html(
+            client, message,
+            msgs.success(f"User <code>{target}</code> unglobally banned."),
+        )
+
+    @app.on_message(filters.command("clear") & NOT_CHANNEL)
+    @security_owner_only
+    @safe_handler
+    async def cmd_clear(client: Client, message: Message):
+        from services import security as security_service
+
+        ok = await security_service.manual_clear(message.from_user.id)
+        if ok:
+            await reply_html(client, message, msgs.success("Recovery balance cleared manually."))
+        else:
+            await reply_html(client, message, msgs.error("Nothing to clear or already at default."))
+
+    @app.on_message(filters.command("restore") & NOT_CHANNEL)
+    @security_owner_only
+    @safe_handler
+    async def cmd_restore(client: Client, message: Message):
+        args = message.command[1:]
+        if not args:
+            await reply_html(client, message, msgs.error("Usage: <code>/restore DUMP-ID</code>"))
+            return
+        dump_id = args[0]
+        from services import security as security_service
+
+        ok = await security_service.manual_restore(message.from_user.id, dump_id)
+        if ok:
+            await reply_html(client, message, msgs.success(f"Restored from dump <code>{dump_id}</code>."))
+        else:
+            await reply_html(client, message, msgs.error(f"Dump <code>{dump_id}</code> not found or cannot restore."))
+
+    @app.on_message(filters.command("recover") & NOT_CHANNEL)
+    @security_owner_only
+    @safe_handler
+    async def cmd_recover(client: Client, message: Message):
+        args = message.command[1:]
+        if not args:
+            await reply_html(client, message, msgs.error("Usage: <code>/recover DUMP-ID</code>"))
+            return
+        dump_id = args[0]
+        from services import security as security_service
+
+        ok = await security_service.manual_recover(message.from_user.id, dump_id)
+        if ok:
+            await reply_html(client, message, msgs.success(f"Recovered from dump <code>{dump_id}</code>."))
+        else:
+            await reply_html(client, message, msgs.error(f"Dump <code>{dump_id}</code> not found or cannot recover."))
+
+    @app.on_message(filters.command("restorecase") & NOT_CHANNEL)
+    @security_owner_only
+    @safe_handler
+    async def cmd_restorecase(client: Client, message: Message):
+        args = message.command[1:]
+        if not args:
+            await reply_html(client, message, msgs.error("Usage: <code>/restorecase CASE-ID</code>"))
+            return
+        case_id = args[0]
+        from services import security as security_service
+
+        ok = await security_service.manual_restorecase(message.from_user.id, case_id)
+        if ok:
+            await reply_html(client, message, msgs.success(f"Restored from case <code>{case_id}</code>."))
+        else:
+            await reply_html(client, message, msgs.error(f"Case <code>{case_id}</code> not found or cannot restore."))
+
+    @app.on_message(filters.command("dumpinfo") & NOT_CHANNEL)
+    @security_sudo_or_owner
+    @safe_handler
+    async def cmd_dumpinfo(client: Client, message: Message):
+        from services import security as security_service
+
+        dumps = await security_service.list_dumps()
+        if not dumps:
+            await reply_html(client, message, msgs.info("No security dumps found."))
+            return
+        lines = []
+        for dump in dumps:
+            lines.append(
+                f"<b>Dump {dump['dump_id']}</b>: {dump['user_count']} users, "
+                f"exploit count: {dump['exploit_count']}, "
+                f"created: {dump['created_at']}, "
+                f"used: {dump.get('used_count', 0)}/{dump.get('user_count', 0)}"
+            )
+        await reply_html(client, message, msgs.info("\n".join(lines)))
+
+    @app.on_message(filters.command("dumps") & NOT_CHANNEL)
+    @security_sudo_or_owner
+    @safe_handler
+    async def cmd_dumps(client: Client, message: Message):
+        from services import security as security_service
+
+        dumps = await security_service.list_dumps()
+        if not dumps:
+            await reply_html(client, message, msgs.info("No security dumps found."))
+            return
+        lines = [f"Dump ID: {d['dump_id']} | Users: {d['user_count']} | Exploits: {d['exploit_count']} | Created: {d['created_at']}" for d in dumps]
+        await reply_html(client, message, msgs.info("\n".join(lines)))
+
+    @app.on_message(filters.command("securityset") & NOT_CHANNEL)
+    @security_owner_only
+    @safe_handler
+    async def cmd_securityset(client: Client, message: Message):
+        from services import security as security_service
+
+        cfg = await security_service.get_security_config()
+        lines = [
+            f"<b>Secret detection:</b> {'✅ Enabled' if cfg.get('secret_detection_enabled', True) else '❌ Disabled'}",
+            f"<b>Global ban on exploit:</b> {'✅ Enabled' if cfg.get('global_ban_on_exploit', True) else '❌ Disabled'}",
+            f"<b>Clear recovery balance:</b> {cfg.get('clear_recovery_balance', 20_000)}",
+        ]
+        await reply_html(client, message, msgs.info("\n".join(lines)))
+

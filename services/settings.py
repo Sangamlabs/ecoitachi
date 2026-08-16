@@ -145,6 +145,11 @@ DEFAULTS: dict[str, Any] = {
         "maximum_bet": 100_000,
         "multiplier": 1.0,
     },
+    "security": {
+        "clear_recovery_balance": 20_000,
+        "global_ban_on_exploit": True,
+        "secret_detection_enabled": True,
+    },
 }
 
 
@@ -324,6 +329,22 @@ async def update_blackjack_config(**changes: Any) -> dict[str, Any]:
     return current
 
 
+async def get_security_config() -> dict[str, Any]:
+    """Return the security configuration merged over defaults."""
+    settings = await get_settings()
+    return dict(settings.get("security", DEFAULTS["security"]))
+
+
+async def update_security_config(**changes: Any) -> dict[str, Any]:
+    """Overwrite one or more security configuration values."""
+    current = await get_security_config()
+    current.update({k: v for k, v in changes.items() if k in DEFAULTS["security"]})
+    await mongo.db[COLLECTION].update_one(
+        {"key": "global"}, {"$set": {"security": current}}, upsert=True
+    )
+    return current
+
+
 GAME_DEFAULTS: dict[str, dict[str, Any]] = {
     "fly": {
         "low": {
@@ -377,3 +398,31 @@ GAME_DEFAULTS: dict[str, dict[str, Any]] = {
         "cooldown": 60,
     },
 }
+
+SECURITY_KEYWORDS: list[str] = [
+    "token",
+    "api_key",
+    "secret",
+    "password",
+    "private_key",
+]
+
+
+async def get_clear_recovery_balance() -> int:
+    """Return the recovery balance threshold for automatic /clear triggering."""
+    return int(await get_settings().get("clear_recovery_balance", 20_000))
+
+
+async def get_global_ban_on_exploit() -> bool:
+    """Return whether exploits should trigger automatic global ban."""
+    return bool(await get_settings().get("global_ban_on_exploit", True))
+
+
+async def get_secret_detection_enabled() -> bool:
+    """Return whether secret/API-key detection is enabled."""
+    return bool(await get_settings().get("secret_detection_enabled", True))
+
+
+async def is_security_enabled() -> bool:
+    """Return whether the full security system is active."""
+    return await get_secret_detection_enabled()
