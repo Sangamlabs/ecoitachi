@@ -239,6 +239,37 @@ async def test_listing_create_cancel():
     assert (await listings_db.get_listing(listing["listing_id"]))["status"] == "cancelled"
 
 
+async def test_user_rmlisting_only_own_listings():
+    await _fund(A, 600_000_000)
+    await _fund(B, 600_000_000)
+    await asset_service.buy(A, "LAPT", "1")
+    await asset_service.buy(B, "LAPT", "1")
+    listing_a = await listings_service.create_listing(A, "LAPT", "1", "6000000")
+    listing_b = await listings_service.create_listing(B, "LAPT", "1", "6000000")
+
+    # A can remove A's own listing...
+    await listings_service.cancel_listing(A, listing_a["listing_id"])
+    assert (await listings_db.get_listing(listing_a["listing_id"]))["status"] == "cancelled"
+
+    # ...but A cannot remove B's listing.
+    with pytest.raises(asset_service.AssetError):
+        await listings_service.cancel_listing(A, listing_b["listing_id"])
+    assert (await listings_db.get_listing(listing_b["listing_id"]))["status"] == "active"
+
+
+async def test_assetsinfo_buy_info():
+    await _fund(A, 600_000_000)
+    await _fund(B, 600_000_000)
+    await asset_service.buy(A, "LAPT", "1")
+    await asset_service.buy(B, "LAPT", "1")
+    info = await asset_service.asset_buy_info("LAPT")
+    assert info["holders"] == 2
+    assert info["total_held"] == 2
+    assert info["market_cap"] == 2 * LAPT_PRICE
+    assert info["trades"] == 2
+    assert info["asset"]["symbol"] == "LAPT"
+
+
 async def test_listing_buy_whole_transfer():
     await _fund(A, 600_000_000)
     await asset_service.buy(A, "LAPT", "1")

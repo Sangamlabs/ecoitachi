@@ -60,6 +60,29 @@ def register(app: Client) -> None:
             return
         await reply_html(client, message, msgs.asset_detail(asset))
 
+    @app.on_message(filters.command("assetsinfo") & NOT_CHANNEL)
+    @safe_handler(feature="economy")
+    async def cmd_assetsinfo(client: Client, message: Message):
+        await ensure_user(client, message)
+        symbol = message.command[1].upper() if len(message.command) > 1 else None
+        if not symbol:
+            stats = await asset_service.market_stats()
+            result = await asset_service.list_paged(page=1)
+            if not result["assets"]:
+                await reply_html(client, message, msgs.error("The Assets Market has no listings."))
+                return
+            await reply_html(
+                client, message,
+                msgs.asset_market_stats(stats) + "\n" + msgs.asset_list(result["assets"]),
+            )
+            return
+        try:
+            info = await asset_service.asset_buy_info(symbol)
+        except asset_service.AssetError as exc:
+            await reply_html(client, message, msgs.error(str(exc)))
+            return
+        await reply_html(client, message, msgs.asset_buy_info(info))
+
     @app.on_message(filters.command("buyasset") & NOT_CHANNEL)
     @safe_handler(feature="economy")
     async def cmd_buyasset(client: Client, message: Message):
@@ -252,6 +275,30 @@ def register(app: Client) -> None:
         await reply_html(
             client, message,
             msgs.success(f"Listing <code>{listing_id}</code> cancelled. Your asset is back in your holdings."),
+        )
+
+    @app.on_message(filters.command("rmlisting") & NOT_CHANNEL)
+    @safe_handler(feature="economy")
+    async def cmd_user_rmlisting(client: Client, message: Message):
+        await ensure_user(client, message)
+        listing_id = message.command[1].upper() if len(message.command) > 1 else None
+        if not listing_id:
+            await reply_html(
+                client, message,
+                msgs.error("Usage: <code>/rmlisting LISTING_ID</code> — remove your own listing"),
+            )
+            return
+        try:
+            await listings_service.cancel_listing(message.from_user.id, listing_id)
+        except (asset_service.AssetError, EconomyError) as exc:
+            await reply_html(client, message, msgs.error(str(exc)))
+            return
+        await reply_html(
+            client, message,
+            msgs.success(
+                f"Removed your listing <code>{listing_id}</code>. "
+                f"The quantity is back in your holdings."
+            ),
         )
 
     @app.on_callback_query(filters.regex(rf"^{ASSET_BUY_PREFIX}"))

@@ -376,14 +376,14 @@ def register(app: Client) -> None:
         )
         await reply_html(client, message, text)
 
-    @app.on_message(filters.command("rmlisting") & NOT_CHANNEL)
+    @app.on_message(filters.command("forcelisting") & NOT_CHANNEL)
     @sudo_only
     @safe_handler(feature="admin")
-    async def cmd_rmlisting(client: Client, message: Message):
+    async def cmd_forcelisting(client: Client, message: Message):
         await ensure_user(client, message)
         listing_id = message.command[1].upper() if len(message.command) > 1 else None
         if not listing_id:
-            await reply_html(client, message, msgs.error("Usage: <code>/rmlisting LISTING_ID</code>"))
+            await reply_html(client, message, msgs.error("Usage: <code>/forcelisting LISTING_ID</code>"))
             return
         try:
             listing = await listings_service.admin_cancel_listing(message.from_user.id, listing_id)

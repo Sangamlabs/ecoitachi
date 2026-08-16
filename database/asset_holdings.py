@@ -159,6 +159,21 @@ async def aggregate_current_value() -> int:
     return int(result[0]["total"]) if result else 0
 
 
+async def aggregate_value_for_asset(asset_id: str) -> int:
+    pipeline = [
+        {"$match": {"asset_id": asset_id, "quantity": {"$gt": EPSILON}}},
+        {"$group": {"_id": None, "total": {"$sum": "$current_value"}}},
+    ]
+    result = await mongo.db[HOLDINGS].aggregate(pipeline).to_list(1)
+    return int(result[0]["total"]) if result else 0
+
+
+async def count_holders_for_asset(asset_id: str) -> int:
+    return await mongo.db[HOLDINGS].count_documents(
+        {"asset_id": asset_id, "quantity": {"$gt": EPSILON}}
+    )
+
+
 async def aggregate_invested() -> int:
     pipeline = [{"$group": {"_id": None, "total": {"$sum": "$total_invested"}}}]
     result = await mongo.db[HOLDINGS].aggregate(pipeline).to_list(1)

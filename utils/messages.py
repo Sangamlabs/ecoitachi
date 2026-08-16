@@ -82,6 +82,7 @@ def help_text() -> str:
         f"<b>🏠 Asset Market</b>\n"
         f"<code>/assets</code> — asset market overview\n"
         f"<code>/asset SYMBOL</code> — asset details\n"
+        f"<code>/assetsinfo [SYMBOL]</code> — market stats / buy-decision info\n"
         f"<code>/buyasset SYMBOL qty</code> — buy (with confirm)\n"
         f"<code>/sellasset SYMBOL qty</code> — sell\n"
         f"<code>/myassets</code> — your asset portfolio\n"
@@ -91,7 +92,7 @@ def help_text() -> str:
         f"<code>/listings</code> — browse user listings\n"
         f"<code>/buylisting ID</code> — buy a listing\n"
         f"<code>/mylistings</code> — your listings\n"
-        f"<code>/cancellisting ID</code> — cancel a listing\n\n"
+        f"<code>/cancellisting ID</code> / <code>/rmlisting ID</code> — remove your own listing\n\n"
         f"<b>🎮 Games</b>\n"
         f"<code>/fly low|medium|high amount</code>\n"
         f"<code>/mines amount</code> — 6x6 mines board\n"
@@ -380,7 +381,7 @@ def admin_help() -> str:
         f"<code>/assetowners SYMBOL [page]</code> — top holders\n"
         f"<code>/assetadminstats</code> — market admin stats\n"
         f"<code>/listinginfo LISTING_ID</code> — listing details\n"
-        f"<code>/rmlisting LISTING_ID</code> — force-cancel a listing\n\n"
+        f"<code>/forcelisting LISTING_ID</code> — force-cancel any listing\n\n"
         f"<b>🎁 Rewards</b>\n"
         f"<code>/setreward daily|weekly|monthly amount</code>\n\n"
         f"<b>👥 Users</b>\n"
@@ -555,6 +556,33 @@ def asset_portfolio(rows: list[str], total_value: int, total_invested: int) -> s
         f"<b>Total P/L:</b> {sign}{format_money(pnl)}",
     ]
     return "\n".join(lines)
+
+
+def asset_buy_info(info: dict[str, Any]) -> str:
+    asset = info["asset"]
+    arrow = "▲" if asset.get("change_percent", 0) >= 0 else "▼"
+    emoji = asset.get("emoji", "📦")
+    frac = "Fractional" if asset.get("allow_fractional") else "Whole units"
+    fee = f" · Buy fee {info['fee_buy']:g}%" if info["fee_buy"] else ""
+    return (
+        f"<b>{emoji} {escape(asset['symbol'])} — {escape(asset.get('name', ''))}</b>\n"
+        f"<blockquote>"
+        f"💵 Current Price: <b>{format_money(asset.get('price', 0))}</b> "
+        f"{arrow} {asset.get('change_percent', 0):.2f}% (24h)\n"
+        f"📈 24h High: {format_money(asset.get('high_price', 0))} · "
+        f"📉 24h Low: {format_money(asset.get('low_price', 0))}\n"
+        f"📊 Volatility: {asset.get('volatility', 0):.1%}\n"
+        f"🔢 {frac} · Min {asset.get('min_quantity', 1):g}"
+        + (f" · Max {asset.get('max_quantity', 0):g}" if asset.get("max_quantity") else "")
+        + f"{fee}\n"
+        f"🏛️ Market Cap: {format_money(info['market_cap'])} · "
+        f"👥 Holders: {info['holders']} · 📦 Held: {info['total_held']:g}\n"
+        f"🧾 Trades: {info['trades']} · 📋 Category: {escape(str(asset.get('category', 'OTHER')))}\n"
+        f"📝 {escape(asset.get('description', 'No description'))}"
+        f"</blockquote>\n"
+        f"<i>Buy with <code>/buyasset {asset['symbol']} qty</code> or grab a user resale via "
+        f"<code>/listings {asset['symbol']}</code>.</i>"
+    )
 
 
 def asset_market_stats(stats: dict[str, Any]) -> str:

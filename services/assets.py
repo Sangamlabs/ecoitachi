@@ -699,6 +699,39 @@ async def mongo_count_asset_holders(asset_id: str) -> int:
     )
 
 
+async def asset_buy_info(symbol: str) -> dict[str, Any]:
+    """Full buy-decision packet for one asset (detail + live market depth)."""
+    asset = await get_active_asset(symbol)
+    asset_id = asset["asset_id"]
+    market_cap = await holdings_db.aggregate_value_for_asset(asset_id)
+    holders = await holdings_db.count_holders_for_asset(asset_id)
+    total_held = await _quantity_in_market(asset_id)
+    return {
+        "asset": asset,
+        "market_cap": market_cap,
+        "holders": holders,
+        "total_held": total_held,
+        "trades": int(asset.get("volume", 0)),
+        "fee_buy": await _buy_fee_percent(),
+    }
+
+
+async def _quantity_in_market(asset_id: str) -> float:
+    from database.mongo import mongo
+
+    pipeline = [
+        {"$match": {"asset_id": asset_id, "quantity": {"$gt": holdings_db.EPSILON}}},
+        {"$group": {"_id": None, "total": {"$sum": "$quantity"}}},
+    ]
+    result = await mongo.db[holdings_db.HOLDINGS].aggregate(pipeline).to_list(1)
+    return round(float(result[0]["total"]), 6) if result else 0.0
+
+
+async def _buy_fee_percent() -> float:
+    cfg = await market_config()
+    return float(cfg.get("buy_fee_percent", 0.0))
+
+
 async def format_money_wrap(value: int) -> str:
     return format_money(value)
 
@@ -710,5 +743,5 @@ __all__ = [
     "refresh_all_asset_values", "create_asset", "update_asset_fields", "deactivate_asset",
     "restore_asset", "set_price", "set_volatility", "audit", "list_paged", "market_stats",
     "admin_stats", "asset_owners", "price_for", "multiply_price", "market_config",
-    "require_market",
+    "require_market", "asset_buy_info",
 ]

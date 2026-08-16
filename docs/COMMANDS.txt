@@ -140,6 +140,14 @@ fractional), OIL (Crude Oil, fractional), BOND (Government Bond), DIAMOND
     Asset detail: category, price, 24h high/low, volatility, quantity rules,
     description. Example: /asset GOLD
 
+/assetsinfo [SYMBOL]
+    With SYMBOL: full buy-decision info for one asset — current price, 24h
+    change/high/low, volatility, quantity rules, buy fee, market cap, holder
+    count, total quantity held, trade count, category and description — so you
+    can decide whether to buy. Example: /assetsinfo GOLD
+    Without SYMBOL: market statistics + the full asset list.
+    Example: /assetsinfo
+
 /buyasset SYMBOL quantity
     Buy from the market. You are shown a confirmation with the current price
     and a CONFIRM button; the price is re-checked server-side when you press
@@ -187,6 +195,11 @@ asset's ID. Buyers buy the WHOLE listing (all of its quantity).
 /cancellisting LISTING_ID
     Cancel one of your ACTIVE listings; the quantity is released back to you.
     Example: /cancellisting LST-1A2B3C4D
+
+/rmlisting LISTING_ID
+    Same as /cancellisting — remove one of YOUR OWN listings. You can only
+    remove listings you created; other users' listings are never touched.
+    Example: /rmlisting LST-1A2B3C4D
 
 GAMES
 --------------------------------------------------------------------------------
@@ -434,9 +447,12 @@ LISTING MARKET (admin)
     Full listing report: seller, buyer, status, quantity, unit price, total.
     Example: /listinginfo LST-1A2B3C4D
 
-/rmlisting LISTING_ID
-    Force-cancel a listing (active or pending). Logs RM_LISTING in the asset
-    audit log.
+/forcelisting LISTING_ID
+    Force-cancel a listing (active or pending), even if it belongs to another
+    user. Logs RM_LISTING in the asset audit log.
+    (Note: the user-facing /rmlisting is a DIFFERENT command — it lets a user
+    remove only their own listing.)
+    Example: /forcelisting LST-1A2B3C4D
 
 FREE REWARDS
 --------------------------------------------------------------------------------
