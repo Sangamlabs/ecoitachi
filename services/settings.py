@@ -53,6 +53,53 @@ DEFAULTS: dict[str, Any] = {
         "mines": 0.0,
         "fly": 0.0,
         "bet": 0.0,
+        "emoji": 0.0,
+        "blackjack": 0.0,
+    },
+    "emoji_games": {
+        "ball": {
+            "enabled": True,
+            "single_enabled": True,
+            "duel_enabled": True,
+            "cooldown": 60,
+            "minimum_bet": 100,
+            "maximum_bet": 100_000,
+            "win_rule": "gte",
+            "win_target": 5,
+            "multiplier": 1.0,
+            "lobby_expiry": 300,
+        },
+        "arrow": {
+            "enabled": True,
+            "single_enabled": True,
+            "duel_enabled": True,
+            "cooldown": 60,
+            "minimum_bet": 100,
+            "maximum_bet": 100_000,
+            "win_rule": "eq",
+            "win_target": 6,
+            "multiplier": 1.5,
+            "lobby_expiry": 300,
+        },
+        "basketball": {
+            "enabled": True,
+            "single_enabled": True,
+            "duel_enabled": True,
+            "cooldown": 60,
+            "minimum_bet": 100,
+            "maximum_bet": 100_000,
+            "win_rule": "gte",
+            "win_target": 4,
+            "multiplier": 1.5,
+            "lobby_expiry": 300,
+        },
+    },
+    "blackjack": {
+        "enabled": True,
+        "cooldown": 60,
+        "minimum_bet": 100,
+        "maximum_bet": 100_000,
+        "multiplier": 1.0,
     },
 }
 
@@ -182,6 +229,55 @@ async def update_game_settings(game: str, **changes: Any) -> dict[str, Any]:
         upsert=True,
     )
     return await get_game_settings(game)
+
+
+async def get_emoji_games_config() -> dict[str, dict[str, Any]]:
+    """Return per-emoji-game config merged over defaults."""
+    settings = await get_settings()
+    stored = settings.get("emoji_games", {})
+    merged: dict[str, dict[str, Any]] = {}
+    for game, defaults in DEFAULTS["emoji_games"].items():
+        cfg = dict(defaults)
+        cfg.update(stored.get(game, {}) if isinstance(stored.get(game), dict) else {})
+        merged[game] = cfg
+    return merged
+
+
+async def get_emoji_game_config(game: str) -> dict[str, Any]:
+    """Return merged config for one emoji game (falls back to defaults)."""
+    config = await get_emoji_games_config()
+    if game not in config:
+        raise ValueError(f"Unknown emoji game: {game}")
+    return config[game]
+
+
+async def update_emoji_game_config(game: str, **changes: Any) -> dict[str, Any]:
+    """Overwrite one or more config values for an emoji game."""
+    if game not in DEFAULTS["emoji_games"]:
+        raise ValueError(f"Unknown emoji game: {game}")
+    config = await get_emoji_games_config()
+    allowed = set(DEFAULTS["emoji_games"][game])
+    config[game].update({k: v for k, v in changes.items() if k in allowed})
+    await mongo.db[COLLECTION].update_one(
+        {"key": "global"}, {"$set": {"emoji_games": config}}, upsert=True
+    )
+    return config[game]
+
+
+async def get_blackjack_config() -> dict[str, Any]:
+    """Return the Blackjack configuration merged over defaults."""
+    settings = await get_settings()
+    return dict(settings.get("blackjack", DEFAULTS["blackjack"]))
+
+
+async def update_blackjack_config(**changes: Any) -> dict[str, Any]:
+    """Overwrite one or more Blackjack configuration values."""
+    current = await get_blackjack_config()
+    current.update({k: v for k, v in changes.items() if k in DEFAULTS["blackjack"]})
+    await mongo.db[COLLECTION].update_one(
+        {"key": "global"}, {"$set": {"blackjack": current}}, upsert=True
+    )
+    return current
 
 
 GAME_DEFAULTS: dict[str, dict[str, Any]] = {

@@ -43,6 +43,14 @@ can be added without rewriting the economy engine.
 - **Games** — `/fly` (configurable difficulties), `/mines` (6×6 inline board), `/bet`;
   central game engine enforces cooldowns, bet limits, one-active-game and double-settlement protection;
   mines callbacks verify user + chat + message ownership
+- **Emoji games** — real Telegram animated dice (`/sball /sarrow /sbasketball` solo,
+  `/ball /arrow /basketball` + `/join CODE` 1v1 duels): the bot sends the emoji, waits,
+  then edits the same message with the actual rolled result; single-player win rules and
+  multipliers are per-game configurable; duels lock both bets, pay the winner `2x`, refund
+  both on a draw, and auto-refund the creator when a lobby expires (admin: `/emojiset`,
+  `/emojitrap`, `/emojigameinfo`, `/emojigames`)
+- **Blackjack** — `/blackjack amount` USER VS BOT, exactly two cards each (A=11/1,
+  J/Q/K=10), highest total wins, ties refund the bet (admin: `/bjset`, `/bjinfo`)
 - **Robbery** — `/rob @user` steals a configurable percentage of a victim's bank
   (clamped min/max) with a random police-catch failure chance and the shared 60s cooldown
 - **Free rewards** — `/daily`, `/weekly`, `/monthly` claim admin-configurable amounts
@@ -102,10 +110,13 @@ unoitachi-bot/
 │   ├── assets.py          # asset market + resale market commands
 │   ├── asset_admin.py     # owner/sudo asset administration
 │   ├── games.py           # /fly /mines /bet + mines callbacks
+│   ├── emoji_games.py     # /sball /sarrow /sbasketball + duels + /join
+│   ├── blackjack.py       # /blackjack (USER VS BOT)
+│   ├── emoji_admin.py     # /emojiset /emojitrap /emojigameinfo /emojigames /bjset /bjinfo
 │   └── admin.py           # owner/sudo administration
 ├── database/              # Motor data-access layer + indexes
 ├── services/              # business logic (economy, transaction, bank, interest, tax,
-│                          #   stocks, leaderboard, game_engine, settings, media)
+│                          #   stocks, leaderboard, game_engine, emoji_games, blackjack, settings, media)
 ├── games/                 # fly, mines, bet (game-specific logic only)
 ├── utils/                 # money, validators, messages, sender, cooldown, permissions
 ├── scheduler/             # APScheduler jobs (interest, market, tax, game cleanup)
@@ -236,9 +247,10 @@ docker run -d --env-file .env --name unoitachi unoitachi-bot
 | Assets | `/assets` `/asset SYMBOL` `/assetsinfo [SYMBOL]` `/buyasset SYMBOL qty` `/sellasset SYMBOL qty` `/myassets` `/assetstats` |
 | Resale | `/listasset SYMBOL qty price` `/listings [SYMBOL] [page]` `/buylisting LISTING_ID` `/mylistings` `/cancellisting LISTING_ID` `/rmlisting LISTING_ID` (own listings only) |
 | Games | `/fly low\|medium\|high amount` `/mines amount` `/bet amount` |
+| Emoji Games | `/sball amount` `/sarrow amount` `/sbasketball amount` `/ball amount` `/arrow amount` `/basketball amount` `/join CODE` `/blackjack amount` |
 | Crime | `/rob @user\|id` — steal from a user's bank (reply-based; 60s cooldown, random police catch) |
 | Owner | `/addsudo @user\|id` `/rsudo @user\|id` — work in DM and groups (reply-based in groups) |
-| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/dtax` `/addtax system rate` `/taxinfo` `/track TX_ID` `/setincome bank\|asset\|stock rate` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/addasset SYMBOL name CATEGORY price volatility` `/editasset SYMBOL field value` `/assetset SYMBOL field value` `/assetprice SYMBOL price` `/assetvolatility SYMBOL v` `/rmasset SYMBOL` `/restoreasset SYMBOL` `/assetinfo SYMBOL` `/assetlist [page]` `/assetsearch query` `/assetowners SYMBOL [page]` `/assetadminstats` `/listinginfo LISTING_ID` `/forcelisting LISTING_ID` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
+| Admin (owner + sudo) | `/adminhelp` `/give @user amount` `/remove @user amount` `/getcoin amount` `/setinterest rate` `/settax rate` `/banksettings` `/dtax` `/addtax system rate` `/taxinfo` `/track TX_ID` `/setincome bank\|asset\|stock rate` `/setreward daily\|weekly\|monthly amount` `/flyset low\|medium\|high field value` `/flytrap low\|medium\|high min_mult max_mult risk win_prob cooldown min_bet max_bet` `/betset win_prob multiplier min_bet max_bet [cooldown]` `/minestrap bombs min_reveals min_bet max_bet cooldown duration` `/minestrap multipliers auto\|m1,m2,...` `/robset win_prob\|percent\|min\|max\|cooldown value` `/emojiset GAME field value` `/emojitrap GAME key=value ...` `/emojigameinfo GAME` `/emojigames` `/bjset field value` `/bjinfo` `/addstock SYMBOL name price volatility` `/rmstock SYMBOL` `/addasset SYMBOL name CATEGORY price volatility` `/editasset SYMBOL field value` `/assetset SYMBOL field value` `/assetprice SYMBOL price` `/assetvolatility SYMBOL v` `/rmasset SYMBOL` `/restoreasset SYMBOL` `/assetinfo SYMBOL` `/assetlist [page]` `/assetsearch query` `/assetowners SYMBOL [page]` `/assetadminstats` `/listinginfo LISTING_ID` `/forcelisting LISTING_ID` `/freeze @user` `/unfreeze @user` `/ban @user` `/unban @user` `/userinfo @user` `/econstats` `/setchat [chat_id] [setting] [on\|off]` |
 
 ## Admin system
 

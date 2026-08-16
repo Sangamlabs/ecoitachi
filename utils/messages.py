@@ -103,11 +103,19 @@ def help_text() -> str:
         f"<code>/mines amount</code> — 6x6 mines board\n"
         f"<code>/bet amount</code> — coin bet\n"
         f"<code>/rob @user</code> — steal from a user's bank\n\n"
+        f"<b>🎳 Emoji Games</b>\n"
+        f"<code>/sball amount</code> — solo bowling\n"
+        f"<code>/sarrow amount</code> — solo darts\n"
+        f"<code>/sbasketball amount</code> — solo hoops\n"
+        f"<code>/ball amount</code> / <code>/arrow amount</code> / <code>/basketball amount</code> — start a 1v1 duel\n"
+        f"<code>/join CODE</code> — join a duel with its 4-digit code\n"
+        f"<code>/blackjack amount</code> — USER VS BOT, 2 cards each\n\n"
         f"<b>🎁 Free Rewards</b>\n"
         f"<code>/daily</code> — free currency every 24h\n"
         f"<code>/weekly</code> — free currency every 7 days\n"
         f"<code>/monthly</code> — free currency every 30 days\n\n"
-        f"<i>Every game and /rob has a 60s cooldown. Bet within your wallet balance.</i>"
+        f"<i>Every game and /rob has a 60s cooldown. Bet within your wallet balance. "
+        f"Unclaimed duel lobbies expire and refund the creator.</i>"
     )
 
 
@@ -432,6 +440,15 @@ def admin_help() -> str:
         f"<code>/betset win_prob multiplier min_bet max_bet [cooldown]</code>\n"
         f"<code>/minestrap ...</code> — mines tuning\n"
         f"<code>/robset field value</code> — rob tuning\n\n"
+        f"<b>🎳 Emoji Games</b>\n"
+        f"<code>/emojiset GAME field value</code> — one field at a time\n"
+        f"<code>/emojitrap GAME key=value ...</code> — bulk set\n"
+        f"<code>/emojigameinfo GAME</code> — current config\n"
+        f"<code>/emojigames</code> — overview of all emoji games\n"
+        f"<code>/bjset field value</code> — blackjack config\n"
+        f"<code>/bjinfo</code> — blackjack config\n"
+        f"<i>Fields: cooldown, min_bet, max_bet, multiplier, rule, target, "
+        f"single, duel, enabled, expiry.</i>\n\n"
         f"<b>📈 Stock Market</b>\n"
         f"<code>/addstock SYMBOL name price volatility</code> — list a stock\n"
         f"<code>/rmstock SYMBOL</code> — delist a stock\n\n"
@@ -747,3 +764,149 @@ def my_listings(listings: list[dict[str, Any]]) -> str:
             f"→ <b>{format_money(listing['total_price'])}</b>"
         )
     return "\n".join(lines)
+
+
+def emoji_lobby(game_label: str, emoji: str, bet: int, game_id: str, expiry: int) -> str:
+    return (
+        f"<b>⚔️ {emoji} {game_label} DUEL LOBBY</b>\n"
+        f"<blockquote>🎰 Game ID: <code>{game_id}</code>\n"
+        f"💰 Bet: <b>{format_money(bet)}</b>\n"
+        f"⏳ Expires in <b>{format_duration(expiry)}</b></blockquote>\n"
+        f"<i>Another player can join with <code>/join {game_id}</code>. "
+        f"If nobody joins in time, your bet is refunded.</i>"
+    )
+
+
+def emoji_single_result(
+    game_label: str,
+    emoji: str,
+    result: int,
+    outcome: str,
+    bet: int,
+    payout: int,
+    tx_id: str,
+) -> str:
+    head = f"{emoji} {game_label}"
+    if outcome == "win":
+        body = (
+            f"<b>✅ YOU WON!</b>\n"
+            f"Rolled <b>{result}</b> · Payout: <b>{format_money(payout)}</b> "
+            f"(profit {format_money(payout - bet)})"
+        )
+    else:
+        body = (
+            f"<b>❌ YOU LOST</b>\n"
+            f"Rolled <b>{result}</b> · Lost: {format_money(bet)}"
+        )
+    return f"<b>{head}</b>\n<blockquote>{body}\n🧾 <code>#{tx_id}</code></blockquote>"
+
+
+def emoji_duel_result(
+    game_label: str,
+    emoji: str,
+    player1: tuple[str, int],
+    player2: tuple[str, int],
+    winner: tuple[str, int] | None,
+    bet: int,
+    payout: int,
+    tx_id: str | None,
+) -> str:
+    name1, result1 = player1
+    name2, result2 = player2
+    lines = [
+        f"<b>⚔️ {emoji} {game_label} DUEL</b>",
+        "",
+        f"🔴 {escape(name1)}: rolled <b>{result1}</b>",
+        f"🔵 {escape(name2)}: rolled <b>{result2}</b>",
+        "",
+    ]
+    if winner is None:
+        lines += [
+            "<b>🤝 DRAW!</b>",
+            f"Both bets ({format_money(bet)}) returned.",
+        ]
+    else:
+        winner_name, _ = winner
+        lines += [
+            f"<b>🏆 {escape(winner_name)} WINS!</b>",
+            f"Pot: <b>{format_money(payout)}</b> "
+            f"(bet {format_money(bet)} + {format_money(bet)})",
+        ]
+    if tx_id:
+        lines += ["", f"🧾 <code>#{tx_id}</code>"]
+    return "\n".join(lines)
+
+
+def blackjack_result(
+    user_cards: list[str],
+    bot_cards: list[str],
+    user_total: int,
+    bot_total: int,
+    outcome: str,
+    bet: int,
+    payout: int,
+    tx_id: str,
+) -> str:
+    if outcome == "win":
+        verdict = (
+            f"<b>✅ YOU BEAT THE BOT!</b>\n"
+            f"Payout: <b>{format_money(payout)}</b> "
+            f"(profit {format_money(payout - bet)})"
+        )
+    elif outcome == "loss":
+        verdict = f"<b>❌ BOT WINS</b>\nLost: {format_money(bet)}"
+    else:
+        verdict = f"<b>🤝 DRAW — bet returned</b> ({format_money(bet)})"
+    return (
+        f"<b>🃏 BLACKJACK</b>\n"
+        f"<blockquote>🫵 You: {' '.join(user_cards)} → <b>{user_total}</b>\n"
+        f"🤖 Bot: {' '.join(bot_cards)} → <b>{bot_total}</b>\n"
+        f"{verdict}</blockquote>\n"
+        f"🧾 <code>#{tx_id}</code>"
+    )
+
+
+def emoji_game_info(game_type: str, emoji: str, label: str, config: dict[str, Any]) -> str:
+    lines = [
+        f"<b>🎮 {emoji} {label} ({escape(game_type)})</b>",
+        "",
+        f"🟢 Enabled: <b>{'yes' if config.get('enabled', True) else 'no'}</b>",
+        f"🔴 Single-player: <b>{'yes' if config.get('single_enabled', True) else 'no'}</b>",
+        f"⚔️ Duels: <b>{'yes' if config.get('duel_enabled', True) else 'no'}</b>",
+        f"⏳ Cooldown: <b>{config.get('cooldown', 60)}s</b>",
+        f"💰 Bet range: <b>{format_money(config.get('minimum_bet', 0))} – {format_money(config.get('maximum_bet', 0))}</b>",
+        f"🎯 Win rule: <b>{escape(config.get('win_rule', 'gte'))}</b> on <b>{config.get('win_target', '-')}</b>",
+        f"💥 Multiplier: <b>{config.get('multiplier', 1.0):.2f}x</b>",
+        f"⏲️ Lobby expiry: <b>{config.get('lobby_expiry', 300)}s</b>",
+    ]
+    return "\n".join(lines)
+
+
+def emoji_games_list(configs: dict[str, Any], defs: dict[str, Any]) -> str:
+    lines = ["<b>🎲 EMOJI GAMES</b>", ""]
+    for game_type, game_def in defs.items():
+        cfg = configs.get(game_type, {})
+        status = "🟢" if cfg.get("enabled", True) else "🔴"
+        lines.append(
+            f"{status} {game_def.emoji} <code>{game_def.label}</code> "
+            f"· single {format_money(cfg.get('minimum_bet', 0))}–{format_money(cfg.get('maximum_bet', 0))}"
+            f" · duel bet {format_money(cfg.get('minimum_bet', 0))}–{format_money(cfg.get('maximum_bet', 0))}"
+            f" · cooldown {cfg.get('cooldown', 60)}s"
+        )
+    lines.append(
+        "",
+        "<i>Play solo with <code>/sball /sarrow /sbasketball</code> or duel with "
+        "<code>/ball /arrow /basketball</code> + <code>/join CODE</code>.</i>",
+    )
+    return "\n".join(lines)
+
+
+def blackjack_info(config: dict[str, Any]) -> str:
+    return (
+        f"<b>🃏 BLACKJACK</b>\n"
+        f"<blockquote>🟢 Enabled: <b>{'yes' if config.get('enabled', True) else 'no'}</b>\n"
+        f"⏳ Cooldown: <b>{config.get('cooldown', 60)}s</b>\n"
+        f"💰 Bet range: <b>{format_money(config.get('minimum_bet', 0))} – {format_money(config.get('maximum_bet', 0))}</b>\n"
+        f"💥 Payout multiplier: <b>{config.get('multiplier', 1.0):.2f}x</b></blockquote>\n"
+        f"<i>2 cards each, A=11/1, J/Q/K=10, highest total wins, ties refund the bet.</i>"
+    )

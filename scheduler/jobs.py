@@ -54,6 +54,17 @@ async def _run_game_cleanup() -> None:
         logger.exception("game cleanup job failed")
 
 
+async def _run_emoji_expiry() -> None:
+    from services import emoji_games as emoji_service
+
+    try:
+        handled = await emoji_service.expire_stale_duels()
+        if handled:
+            logger.info("expired %d emoji duel lobbies", len(handled))
+    except Exception:
+        logger.exception("emoji duel expiry job failed")
+
+
 async def _run_monthly_tax() -> None:
     try:
         await tax_service.distribute_monthly()
@@ -93,6 +104,14 @@ def build_scheduler() -> AsyncIOScheduler:
         IntervalTrigger(minutes=1),
         id="game_cleanup",
         name="expire stale game sessions",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _run_emoji_expiry,
+        IntervalTrigger(minutes=1),
+        id="emoji_expiry",
+        name="expire emoji duel lobbies (refund creator)",
         max_instances=1,
         coalesce=True,
     )

@@ -28,6 +28,9 @@ COMMAND_REGISTRY = [
     "handlers.asset_admin",
     "handlers.income",
     "handlers.games",
+    "handlers.emoji_games",
+    "handlers.blackjack",
+    "handlers.emoji_admin",
     "handlers.rewards",
     "handlers.admin",
 ]

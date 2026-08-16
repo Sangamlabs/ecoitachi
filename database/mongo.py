@@ -45,6 +45,7 @@ class Mongo:
             asset_listings,
             assets,
             bank,
+            emoji_games,
             games,
             stocks,
             transactions,
@@ -59,6 +60,7 @@ class Mongo:
         await asset_holdings.ensure_indexes()
         await asset_listings.ensure_indexes()
         await games.ensure_indexes()
+        await emoji_games.ensure_indexes()
         await bank.ensure_indexes()
 
 

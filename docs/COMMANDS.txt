@@ -242,6 +242,48 @@ game. A failed bet only loses the bet; no money is ever duplicated.
     Instant coin-flip bet with a fixed win probability and multiplier
     (default 50% / 2.0x). Example: /bet 1000
 
+EMOJI GAMES (Telegram animated dice)
+--------------------------------------------------------------------------------
+Solo rounds use Telegram's real animated dice — the bot sends the emoji, waits
+one second, then edits the same message with the actual rolled result. Win
+rules and multipliers are admin-configurable per game (defaults below).
+
+Games / defaults:
+    🎳 ball      1-6, WIN when roll >= 5 (gte), multiplier 1.0x
+    🎯 arrow     1-6, WIN when roll == 6 (eq),  multiplier 1.5x
+    🏀 basketball 1-5, WIN when roll >= 4 (gte), multiplier 1.5x
+
+Single-player (bet locked at start, WIN = bet + bet*multiplier, LOSS = 0):
+    /sball amount
+    /sarrow amount
+    /sbasketball amount
+    Example: /sball 500
+
+Duels (1v1, 4-digit Game ID lobby):
+    /ball amount      -> creates a lobby with a 4-digit code
+    /arrow amount
+    /basketball amount
+    /join CODE        -> join the lobby; both players' bets are locked
+    The creator and joiner each roll the same emoji. Higher roll wins the pot
+    (2x the bet); equal rolls = DRAW and both bets are refunded (no money is
+    created). Lobbies expire after 5 minutes (default) and the creator's bet
+    is auto-refunded.
+    Example:
+        Player A: /ball 1000   -> Game ID: 4821
+        Player B: /join 4821   -> both roll; winner takes ₹2,000.
+
+Cooldowns are per game and per user; for a duel BOTH players must be off
+cooldown. You can only have ONE active emoji game at a time.
+
+BLACKJACK (USER VS BOT)
+--------------------------------------------------------------------------------
+/blackjack amount
+    Simple 2-card showdown vs the bot. No hit/stand/split/double/insurance.
+        Cards:  2-10 = face value, J/Q/K = 10, A = 11 (or 1 if it would bust).
+        Outcome: higher total wins; equal totals = DRAW and the bet returns.
+    WIN payout = bet + bet * multiplier (default 1.0x -> 2x). Example:
+    /blackjack 1000
+
 CRIME
 --------------------------------------------------------------------------------
 /rob @user | /rob user_id | reply to a user + /rob
@@ -415,6 +457,47 @@ GAMES — ROB (crime tuning)
         max       : >= 0    (default ₹5,000) maximum stolen amount (min <= max)
         cooldown  : seconds (default 60)
     Example: /robset win_prob 0.60
+
+GAMES — EMOJI
+--------------------------------------------------------------------------------
+/emojiset GAME field value
+    Set one config field for an emoji game (GAME = ball | arrow | basketball).
+    Fields and defaults:
+        enabled     : on/off            (default on)
+        single      : on/off            (default on)  solo rounds allowed
+        duel        : on/off            (default on)  duels allowed
+        cooldown    : seconds >= 0      (default 60)
+        min_bet     : >= 0              (default ₹1)
+        max_bet     : >= 0 (>= min)     (default ₹1,000)
+        multiplier  : 0 to 1000         (default ball 1.0, arrow/basketball 1.5)
+        rule        : gte | eq          (default ball gte, arrow eq, basketball gte)
+        target      : within dice range (default ball 5, arrow 6, basketball 4)
+        expiry      : seconds >= 0      (default 300) duel lobby lifetime
+    Example: /emojiset ball multiplier 2
+
+/emojitrap GAME key=value key=value ...
+    Bulk-set multiple fields at once (same fields as /emojiset).
+    Example: /emojitrap arrow rule=eq target=6 multiplier=2 cooldown=30
+
+/emojigameinfo GAME
+    Show the current configuration for one emoji game.
+
+/emojigames
+    Overview of all emoji games (enabled state, bet ranges, cooldown).
+
+GAMES — BLACKJACK
+--------------------------------------------------------------------------------
+/bjset field value | /bjset key=value ...
+    Configure /blackjack. Fields and defaults:
+        enabled     : on/off    (default on)
+        cooldown    : seconds   (default 60)
+        min_bet     : >= 0      (default ₹1)
+        max_bet     : >= 0      (default ₹1,000)
+        multiplier  : 0 to 1000 (default 1.0 -> 2x on a win)
+    Example: /bjset multiplier 1.5
+
+/bjinfo
+    Show the current blackjack configuration.
 
 MARKET
 --------------------------------------------------------------------------------
