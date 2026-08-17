@@ -1,115 +1,48 @@
-"""Recovery Handler - handles /restore, /recover, /restorecase, /unquarantine commands.
-from pyrogram import Client
-
-Business logic delegated to RecoveryService.
-Ensures /restore and /recover use the SAME RecoveryService method.
-"""
-
-from pyrogram import filters
+"""Recovery Handler - handles /restore, /recover, /restorecase, /unquarantine commands."""
+from pyrogram import Client, filters
 from pyrogram.types import Message
 
-from services.security import manual_restore, manual_restorecase, restore_from_dump
-from services.economy import reset_recovery_balance
+from database import security as sec_db
+from services import settings as settings_service
+from services import economy as econ
 from utils.messages import error, success, info
-
-
-async def cmd_restore(client: Message, dump_id: str = None):
-    """Handle /restore command - Restore from dump.
-    
-    Usage: /restore DUMP-ID  (owner only)
-    """
-    # Check owner only
-    if not is_owner(message.from_user.id):
-        await reply_html(client, message, msgs.error("Only the bot owner can restore from dumps."))
-        return
-    
-    if not dump_id:
-        args = message.command[1:]
-        if not args:
-            await reply_html(client, message, msgs.error("Usage: /restore DUMP-ID"))
-            return
-        dump_id = args[0]
-    
-    # Execute restore
-    ok, msg = await manual_restore(dump_id, message.from_user.id)
-    await reply_html(client, message, success(msg) if ok else msgs.error(msg))
-
-
-async def cmd_recover(client: Message, dump_id: str = None):
-    """Handle /recover command - Recover from dump.
-    
-    Usage: /recover DUMP-ID  (owner only)
-    Important: /restore and /recover MUST use the SAME RecoveryService method.
-    """
-    # Check owner only
-    if not is_owner(message.from_user.id):
-        await reply_html(client, message, msgs.error("Only the bot owner can recover from dumps."))
-        return
-    
-    if not dump_id:
-        args = message.command[1:]
-        if not args:
-            await reply_html(client, message, msgs.error("Usage: /recover DUMP-ID"))
-            return
-        dump_id = args[0]
-    
-    # Execute recover using THE SAME method as /restore
-    # Both call manual_restore which calls restore_from_dump
-    ok, msg = await manual_restore(dump_id, message.from_user.id)
-    await reply_html(client, message, success(msg) if ok else msgs.error(msg))
-
-
-async def cmd_restorecase(client: Message, case_id: str = None):
-    """Handle /restorecase command - Restore from security case.
-    
-    Usage: /restorecase CASE-ID  (owner only)
-    """
-    # Check owner only
-    if not is_owner(message.from_user.id):
-        await reply_html(client, message, msgs.error("Only the bot owner can restore from cases."))
-        return
-    
-    if not case_id:
-        args = message.command[1:]
-        if not args:
-            await reply_html(client, message, msgs.error("Usage: /restorecase CASE-ID"))
-            return
-        case_id = args[0]
-    
-    # Execute restore from case
-    ok, msg = await manual_restorecase(case_id, message.from_user.id)
-    await reply_html(client, message, success(msg) if ok else msgs.error(msg))
-
-
-async def cmd_unquarantine(client: Message, user_id_str: str = None):
-    """Handle /unquarantine command - Remove quarantine from user.
-    
-    Usage: /unquarantine USER_ID  (owner only)
-    """
-    # Check owner only
-    if not is_owner(message.from_user.id):
-        await reply_html(client, message, msgs.error("Only the bot owner can unquarantine users."))
-        return
-    
-    # Get target user ID
-    target_id = None
-    if user_id_str:
-        target_id = int(user_id_str)
-    elif message.reply_to_message and message.reply_to_message.from_user:
-        target_id = message.reply_to_message.from_user.id
-    elif len(message.command) > 1 and message.command[1].isdigit():
-        target_id = int(message.command[1])
-    
-    if target_id is None:
-        await reply_html(client, message, msgs.error("User not found."))
-        return
-    
-    # Clear quarantine
-    from services import economy as econ_service
-    result = await econ_service.clear_quarantine(target_id)
-    
-    if result:
-        await reply_html(client, message, info(f"User <code>{target_id}</code> unquarantined."))
-    else:
-        await reply_html(client, message, msgs.error(f"User <code>{target_id}</code> was not quarantined."))
 from utils.sender import reply_html
+
+async def register_recovery_handlers(app: Client) -> None:
+    """Register recovery handlers with the Pyrogram Client."""
+    pass
+
+async def cmd_restore(client: Client, message: Message):
+    """Handle /restore command - Restore from dump."""
+    # Owner-only manual clear of recovery balance
+    target = message.from_user.id
+    ok, msg = await manual_clear(target)
+    if ok:
+        await reply_html(client, message, success(msg))
+    else:
+        await reply_html(client, message, msgs.error(msg))
+
+async def cmd_recover(client: Client, message: Message):
+    """Handle /recover command - Recover from dump (same as /restore)."""
+    await cmd_restore(client, message)
+
+async def cmd_restorecase(client: Client, message: Message):
+    """Handle /restorecase command - Restore from case."""
+    case_id = message.command[1] if len(message.command) > 1 else None
+    if not case_id:
+        await reply_html(client, message, msgs.error("Usage: /restorecase <case_id>"))
+        return
+    ok, msg = await sec_db.restore_from_case(case_id, message.from_user.id)
+    if ok:
+        await reply_html(client, message, success(msg))
+    else:
+        await reply_html(client, message, msgs.error(msg))
+
+async def cmd_unquarantine(client: Client, message: Message):
+    """Handle /unquarantine command - Remove user from quarantine."""
+    target = message.from_user.id
+    ok = await sec_db.remove_quarantine(target)
+    if ok:
+        await reply_html(client, message, success(f"User <code>{target}</code> removed from quarantine."))
+    else:
+        await reply_html(client, message, msgs.error(f"User <code>{target}</code> is not quarantined."))

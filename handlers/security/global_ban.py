@@ -1,17 +1,11 @@
-"""Global Ban Handler - handles /gban and /ungban commands.
-from pyrogram import Client
-
-Only handles Telegram command parsing and response formatting.
-Business logic delegated to GlobalBanService.
-"""
-
-from pyrogram import filters
+"""Global Ban Handler - handles /gban and /ungban commands."""
+from pyrogram import Client, filters
 from pyrogram.types import Message
 
 from database import security as sec_db
 from services.security import global_ban_check, global_ban, global_unban
 from utils.messages import error, success
-
+from utils.sender import reply_html
 
 async def _resolve_target(message: Message) -> int | None:
     """Resolve target user ID from command argument or reply."""
@@ -27,10 +21,9 @@ async def _resolve_target(message: Message) -> int | None:
             return doc["user_id"] if doc else None
     return None
 
-
 async def cmd_gban(client: Client, message: Message):
     """Handle /gban command - Global ban a user.
-    
+
     Owner + Sudo only. Usage: /gban @user [reason] /gban user_id [reason]
     """
     target = await _resolve_target(message)
@@ -85,7 +78,7 @@ async def cmd_gban(client: Client, message: Message):
 
 async def cmd_ungban(client: Client, message: Message):
     """Handle /ungban command - Remove global ban.
-    
+
     Owner + Sudo only. Usage: /ungban @user /ungban user_id
     """
     target = await _resolve_target(message)
