@@ -16,7 +16,16 @@ COLLECTIONS: dict[str, str] = {
     "global_bans": "global_bans",
     "security_cases": "security_cases",
     "security_dumps": "security_dumps",
+    "security_quarantines": "security_quarantines",
     "security_events": "security_events",
+    "security_quarantines": "security_quarantines",
+
+    "global_bans": "global_bans",
+    "security_cases": "security_cases",
+    "security_dumps": "security_dumps",
+    "security_quarantines": "security_quarantines",
+    "security_events": "security_events",
+    "security_quarantines": "security_quarantines",
 }
 
 
@@ -325,3 +334,51 @@ async def create_security_dump_user(
     snap.setdefault("assets", {})
 
     return await create_dump(dump_id, user_id, dump_type, reason, snap, case_id)
+
+# ---------------------------------------------------------------------------
+# Quarantine State
+# ---------------------------------------------------------------------------
+
+async def set_quarantine(user_id: int, is_quarantined: bool, reason: str = "", case_id: Optional[str] = None) -> None:
+    """Set quarantine state for a user."""
+    doc = {
+        "user_id": user_id,
+        "is_quarantined": is_quarantined,
+        "reason": reason,
+        "case_id": case_id,
+        "quarantined_at": int(time.time()),
+        "updated_at": int(time.time()),
+    }
+    await mongo.db[COLLECTIONS["security_quarantines"]].replace_one(
+        {"user_id": user_id}, doc, upsert=True
+    )
+
+async def get_quarantine(user_id: int) -> Optional[dict[str, Any]]:
+    """Return the quarantine document for *user_id*, or ``None``."""
+    return await mongo.db[COLLECTIONS["security_quarantines"]].find_one({"user_id": user_id})
+
+async def get_quarantine_info(user_id: int) -> Optional[dict[str, Any]]:
+    """Return quarantine info for a user."""
+    doc = await get_quarantine(user_id)
+    if doc:
+        return {
+            "is_quarantined": doc.get("is_quarantined", False),
+            "reason": doc.get("reason", ""),
+            "case_id": doc.get("case_id"),
+            "quarantined_at": doc.get("quarantined_at"),
+            "updated_at": doc.get("updated_at"),
+        }
+    return None
+
+async def list_quarantined_users() -> list[dict[str, Any]]:
+    """List all quarantined users."""
+    cursor = mongo.db[COLLECTIONS["security_quarantines"]].find({"is_quarantined": True})
+    return await cursor.to_list(length=None)
+
+async def remove_quarantine(user_id: int) -> bool:
+    """Remove quarantine state for a user."""
+    result = await mongo.db[COLLECTIONS["security_quarantines"]].update_one(
+        {"user_id": user_id}, {"$set": {"is_quarantined": False, "updated_at": int(time.time())}}
+    )
+    return result.modified_count > 0
+

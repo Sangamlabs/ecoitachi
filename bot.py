@@ -35,6 +35,7 @@ COMMAND_REGISTRY = [
     "handlers.admin",
     "handlers.promo_admin",
     "handlers.promo_detect",
+    "handlers.security"
 ]
 
 

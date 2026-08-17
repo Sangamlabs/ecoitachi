@@ -21,10 +21,32 @@ from pyrogram.types import Message
 from database import security as sec_db
 from services import settings as settings_service
 from utils.permissions import is_owner, is_sudo
-from utils.sender import reply_html
 from utils.messages import error, success, info
+from utils.sender import reply_html
 
 logger = logging.getLogger("security")
+
+
+# ---------------------------------------------------------------------------
+# Quarantine State — stored in security_global_bans collection
+# ---------------------------------------------------------------------------
+
+async def quarantine_check(user_id: int) -> bool:
+    """Return ``True`` if the user is currently quarantined."""
+    doc = await sec_db.get_quarantine(user_id)
+    return doc is not None and doc.get("is_quarantined", False)
+
+
+async def quarantine_user(user_id: int, reason: str = "Security quarantine") -> bool:
+    """Quarantine a user — blocks economy commands globally."""
+    await sec_db.set_quarantine(user_id, True, reason)
+    return True
+
+
+async def clear_quarantine(user_id: int) -> bool:
+    """Clear a user's quarantine status."""
+    await sec_db.set_quarantine(user_id, False)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +86,6 @@ def _contains_secret(text: str) -> Optional[str]:
 
 async def global_ban_check(user_id: int) -> tuple[bool, Optional[str]]:
     """Return ``(is_banned, reason)`` for a user."""
-    from database import security as sec_db
     doc = await sec_db.get_global_ban(user_id)
     if doc:
         return True, doc.get("reason")
@@ -116,10 +137,10 @@ async def global_ban(
     )
 
     # Quarantine the user's economy
-    from services import economy as econ
     try:
+        from services import economy as econ
         await econ.quarantine_user(user_id)
-    except Exception:
+    except Exception:  # noqa: BLE001 – quarantine failure is not fatal
         logger.warning("Failed to quarantine user %d during global ban", user_id)
 
     return ban_doc
@@ -129,8 +150,8 @@ async def global_unban(user_id: int) -> bool:
     """Remove a global ban (soft‑delete)."""
     result = await sec_db.remove_global_ban(user_id)
     if result:
-        from services import economy as econ
-        await econ.clear_quarantine(user_id)
+        # Also clear quarantine flag via security service
+        await sec_db.set_quarantine(user_id, False)
     return result
 
 
@@ -182,7 +203,7 @@ async def create_security_dump(
     """Create a security dump *before* any destructive economy operation."""
     import uuid as _uuid
 
-    dump_id = f"DUMP-{_uuid.uuid4().hex[:8].upper()}"
+    dump_id = f"DUMP-{uuid.uuid4().hex[:8].upper()}"
 
     from services import economy as econ
     if snapshot is None:
@@ -237,7 +258,7 @@ async def restore_from_dump(dump_id: str, target_user_id: int) -> bool:
             if qty is not None and qty > 0:
                 await econ.set_user_asset(target_user_id, aid, int(qty))
     except Exception as e:
-        logger.error("Failed to restore dump %s: %s", dump_id, e)
+        logger.error("Failed to restore dump %s for user %d: %s", dump_id, target_user_id, e)
         return False
 
     await sec_db.update_dump(dump_id, status="used", used_by=target_user_id, used_at=int(time.time()))
@@ -250,83 +271,6 @@ async def restore_from_dump(dump_id: str, target_user_id: int) -> bool:
         details={"dump_id": dump_id, "restored_to": target_user_id},
     )
     return True
-
-
-# ---------------------------------------------------------------------------
-# Quarantine Service
-# ---------------------------------------------------------------------------
-
-
-async def quarantine_check(user_id: int) -> bool:
-    from services import economy as econ
-    return await econ.is_quarantined(user_id)
-
-
-async def quarantine_user(user_id: int, reason: str = "Security quarantine") -> bool:
-    from services import economy as econ
-    return await econ.quarantine_user(user_id, reason)
-
-
-async def clear_quarantine(user_id: int) -> bool:
-    from services import economy as econ
-    return await econ.clear_quarantine(user_id)
-
-
-# ---------------------------------------------------------------------------
-# Secret Detection on Messages
-# ---------------------------------------------------------------------------
-
-
-async def handle_secret_detection(client: Client, message: Message) -> Optional[dict[str, Any]]:
-    """Handle a message that contains a detected secret."""
-    if not message.from_user:
-        return None
-    user_id = message.from_user.id
-    text = message.text or ""
-
-    if not text:
-        return None
-
-    detected_type = _contains_secret(text)
-    if not detected_type:
-        return None
-
-    await sec_db.create_event(
-        event_id=f"EVT-{uuid.uuid4().hex[:8].upper()}",
-        event_type="secret_leak",
-        user_id=user_id,
-        actor_id=user_id,
-        details={
-            "secret_type": detected_type,
-            "message_id": message.message_id,
-            "chat_id": message.chat.id if message.chat else 0,
-        },
-    )
-
-    high_confidence: Set[str] = {"bot_token", "mongo_uri", "private_key"}
-    if detected_type in high_confidence:
-        if not await is_owner(user_id):
-            try:
-                await global_ban(
-                    user_id=user_id,
-                    reason=f"Critical secret leak ({detected_type})",
-                    banned_by=user_id,
-                    source="auto_detection",
-                )
-                try:
-                    from services import economy as econ
-                    await econ.quarantine_user(user_id, "Critical secret leak")
-                except Exception:
-                    pass
-            except Exception as e:
-                logger.error("Failed to auto-ban user %d for secret leak: %s", user_id, e)
-
-    return {
-        "secret_type": detected_type,
-        "user_id": user_id,
-        "message_id": message.message_id,
-        "action_taken": detected_type in high_confidence,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -418,3 +362,60 @@ async def check_sudo_security(user_id: int, action: str = "unknown") -> bool:
             return False
         return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# Secret Detection on Messages
+# ---------------------------------------------------------------------------
+
+
+async def handle_secret_detection(client: Client, message: Message) -> Optional[dict[str, Any]]:
+    """Handle a message that contains a detected secret."""
+    if not message.from_user:
+        return None
+    user_id = message.from_user.id
+    text = message.text or ""
+
+    if not text:
+        return None
+
+    detected_type = _contains_secret(text)
+    if not detected_type:
+        return None
+
+    await sec_db.create_event(
+        event_id=f"EVT-{uuid.uuid4().hex[:8].upper()}",
+        event_type="secret_leak",
+        user_id=user_id,
+        actor_id=user_id,
+        details={
+            "secret_type": detected_type,
+            "message_id": message.message_id,
+            "chat_id": message.chat.id if message.chat else 0,
+        },
+    )
+
+    high_confidence: Set[str] = {"bot_token", "mongo_uri", "private_key"}
+    if detected_type in high_confidence:
+        if not await is_owner(user_id):
+            try:
+                await global_ban(
+                    user_id=user_id,
+                    reason=f"Critical secret leak ({detected_type})",
+                    banned_by=user_id,
+                    source="auto_detection",
+                )
+                try:
+                    from services import economy as econ
+                    await econ.quarantine_user(user_id, "Critical secret leak")
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.error("Failed to auto-ban user %d for secret leak: %s", user_id, e)
+
+    return {
+        "secret_type": detected_type,
+        "user_id": user_id,
+        "message_id": message.message_id,
+        "action_taken": detected_type in high_confidence,
+    }
