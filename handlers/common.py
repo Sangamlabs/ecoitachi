@@ -9,7 +9,7 @@ from typing import Awaitable, Callable
 from pyrogram import Client
 from pyrogram.types import Message
 
-from database import users as users_db
+from services import identity as identity_service
 from services.economy import EconomyError, BannedUser, FrozenUser, InsufficientBalance
 from services.game_engine import GameCooldownError, GameError, GameInProgress, NoActiveGame
 from services.promo_rewards import PromoRewardError
@@ -27,8 +27,7 @@ async def ensure_user(client: Client, message: Message) -> None:
     user = message.from_user
     if user is None:
         return
-    await users_db.get_or_create_user(user.id, user.username, user.first_name)
-    await users_db.touch_user(user.id, user.username, user.first_name)
+    await identity_service.ensure_user(user.id, user.username, user.first_name)
 
 
 def safe_handler(func=None, *, feature: str | None = None) -> Callable:

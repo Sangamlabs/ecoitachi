@@ -500,7 +500,9 @@ def admin_help() -> str:
         f"<b>👥 Users</b>\n"
         f"<code>/freeze @user</code> / <code>/unfreeze @user</code>\n"
         f"<code>/ban @user</code> / <code>/unban @user</code>\n"
-        f"<code>/userinfo @user</code> — user details\n\n"
+        f"<code>/userinfo @user</code> — user details\n"
+        f"<code>/data USER</code> — full activity report (ID / @username / UID / reply)\n"
+        f"<code>/clear USER</code> — backup + reset economy, returns recovery ID (owner)\n\n"
         f"<b>⚙️ Group config</b>\n"
         f"<code>/setchat [chat_id] [setting] [on|off]</code>\n\n"
         f"<b>📊 Stats</b>\n"
@@ -604,6 +606,99 @@ def userinfo(user: dict[str, Any], stats: dict[str, Any]) -> str:
         f"🏆 Monthly Rank: {user.get('monthly_rank') or '—'}\n"
         f"🧾 Transactions: {stats['transactions']}"
         f"</blockquote>"
+    )
+
+
+GAME_TX_TYPES = {
+    "GAME_BET", "GAME_WIN", "GAME_LOSS", "EMOJI_GAME_WIN", "EMOJI_GAME_LOSS",
+    "EMOJI_GAME_REFUND", "EMOJI_DUEL_WIN", "EMOJI_DUEL_LOSS", "EMOJI_DUEL_DRAW",
+    "EMOJI_DUEL_REFUND", "BLACKJACK_WIN", "BLACKJACK_LOSS", "BLACKJACK_DRAW",
+}
+
+
+def _fmt_ts(ts: Any) -> str:
+    if not ts:
+        return "—"
+    try:
+        return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(ts)))
+    except (ValueError, TypeError, OverflowError):
+        return "—"
+
+
+def user_data_report(
+    user: dict[str, Any],
+    *,
+    stock_holdings: list[dict[str, Any]],
+    asset_holdings: list[dict[str, Any]],
+    cases: list[dict[str, Any]],
+    dumps: list[dict[str, Any]],
+    recovery: dict[str, Any] | None,
+    quarantine: dict[str, Any] | None,
+    transactions: list[dict[str, Any]],
+    transaction_count: int,
+) -> str:
+    """Admin-only /data report.  Shows only real stored fields — never secrets."""
+    uid = user.get("unique_user_id") or "—"
+    name = escape(user.get("first_name") or "Unknown")
+    username = user.get("username")
+    username_line = f"@{escape(username)}" if username else "—"
+    stocks_value = int(user.get("stocks_value", 0))
+    asset_value = int(user.get("asset_value", 0))
+    net = (
+        int(user.get("wallet", 0))
+        + int(user.get("bank", 0))
+        + stocks_value
+        + asset_value
+    )
+
+    badges = []
+    if user.get("is_banned"):
+        badges.append("<s>BANNED</s>")
+    if user.get("is_frozen"):
+        badges.append("<s>FROZEN</s>")
+    if quarantine and quarantine.get("is_quarantined"):
+        badges.append("<s>QUARANTINED</s>")
+    badge_text = " " + " ".join(badges) if badges else ""
+
+    games_played = sum(1 for tx in transactions if tx.get("type") in GAME_TX_TYPES)
+    active_cases = sum(1 for c in cases if c.get("status") == "open")
+
+    recovery_line = "—"
+    if recovery:
+        recovery_line = (
+            f"Default <code>{format_money(int(recovery.get('recovery_balance', 0)))}</code>"
+            f" · last dump <code>{recovery.get('last_dump_id') or '—'}</code>"
+        )
+    elif dumps:
+        recovery_line = f"{len(dumps)} dump(s) available"
+
+    tx_lines = []
+    for tx in transactions[:8]:
+        tx_lines.append(transaction_row(tx))
+
+    return (
+        f"<b>👤 USER DATA</b>{badge_text}\n"
+        f"<blockquote>"
+        f"🆔 <b>UNOITACHI UID:</b> <code>{uid}</code>\n"
+        f"📱 <b>Telegram ID:</b> <code>{user['user_id']}</code>\n"
+        f"👤 <b>Name:</b> {name}\n"
+        f"💬 <b>Username:</b> {username_line}\n"
+        f"📅 <b>Registered:</b> {_fmt_ts(user.get('created_at'))}\n"
+        f"🕒 <b>Last Seen:</b> {_fmt_ts(user.get('last_seen_at') or user.get('last_active_at'))}\n\n"
+        f"💵 <b>Wallet:</b> {format_money(int(user.get('wallet', 0)))}\n"
+        f"🏦 <b>Bank:</b> {format_money(int(user.get('bank', 0)))}\n"
+        f"📈 <b>Stocks:</b> {format_money(stocks_value)} ({len(stock_holdings)} holdings)\n"
+        f"🏠 <b>Assets:</b> {format_money(asset_value)} ({len(asset_holdings)} holdings)\n"
+        f"💎 <b>Net Worth:</b> {format_money(net)}\n\n"
+        f"🏦 <b>Active Loan:</b> N/A (no loan system)\n"
+        f"⚠️ <b>Security Cases:</b> {len(cases)} ({active_cases} open)\n"
+        f"🛡 <b>Recovery:</b> {recovery_line}\n"
+        f"💸 <b>Total Earned:</b> {format_money(int(user.get('total_earned', 0)))}\n"
+        f"💳 <b>Total Spent:</b> {format_money(int(user.get('total_spent', 0)))}\n"
+        f"🧾 <b>Transactions:</b> {transaction_count}\n"
+        f"🎮 <b>Games Played:</b> {games_played}\n"
+        f"</blockquote>"
+        + (f"\n<b>🧾 RECENT TRANSACTIONS</b>\n" + "\n".join(tx_lines) if tx_lines else "")
     )
 
 

@@ -14,6 +14,7 @@ from pyrogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMa
 from handlers.common import ensure_user, safe_handler
 from services import asset_listings as listings_service
 from services import assets as asset_service
+from services import identity as identity_service
 from services.economy import EconomyError
 from utils import messages as msgs
 from utils.money import format_money
@@ -305,6 +306,9 @@ def register(app: Client) -> None:
     async def cb_asset_buy(client: Client, callback: CallbackQuery):
         if callback.from_user is None:
             return
+        await identity_service.ensure_user(
+            callback.from_user.id, callback.from_user.username, callback.from_user.first_name
+        )
         data = callback.data[len(ASSET_BUY_PREFIX):]
         if data == "cancel":
             await edit_html(client, callback.message, "🚫 Purchase cancelled.", reply_markup=None)

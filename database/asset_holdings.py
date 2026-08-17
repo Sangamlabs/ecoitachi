@@ -73,6 +73,34 @@ async def add_holding(
         )
 
 
+async def set_holding_quantity(user_id: int, asset_id: str, quantity: float) -> None:
+    """Restore an exact asset holding quantity (used by security dump restore)."""
+    if quantity is None or quantity <= EPSILON:
+        await mongo.db[HOLDINGS].delete_one({"user_id": user_id, "asset_id": asset_id})
+        return
+    existing = await mongo.db[HOLDINGS].find_one({"user_id": user_id, "asset_id": asset_id})
+    now = int(time.time())
+    if existing is None:
+        await mongo.db[HOLDINGS].insert_one(
+            {
+                "user_id": user_id,
+                "asset_id": asset_id,
+                "symbol": asset_id,
+                "quantity": quantity,
+                "average_buy_price": 0,
+                "total_invested": 0,
+                "current_value": 0,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        return
+    await mongo.db[HOLDINGS].update_one(
+        {"user_id": user_id, "asset_id": asset_id},
+        {"$set": {"quantity": quantity, "updated_at": now}},
+    )
+
+
 async def _sell_pipeline(qty: float, price: int) -> list[dict[str, Any]]:
     return [
         {

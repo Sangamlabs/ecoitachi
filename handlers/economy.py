@@ -9,7 +9,7 @@ from pyrogram.types import Message
 
 from database import users as users_db
 from handlers.common import ensure_user, safe_handler
-from services import economy, leaderboard as leaderboard_service, rob as rob_service
+from services import economy, identity as identity_service, leaderboard as leaderboard_service, rob as rob_service
 from services import tax as tax_service, transaction as tx_service
 from utils import messages as msgs
 from utils.sender import reply_html, schedule_delete
@@ -63,22 +63,32 @@ def register(app: Client) -> None:
         await ensure_user(client, message)
         args = message.command[1:]
 
-        # Target priority: reply user id > explicit numeric id > username lookup.
+        # Target priority: reply user id > explicit id / @username / UID.
         target_id = target_from_message(message)
         amount_idx = 0
         if target_id is None and args:
             parsed = parse_target_arg(args[0])
             if parsed is not None:
-                pid, username = parsed
                 amount_idx = 1
-                if pid == -1:
-                    doc = await users_db.get_user_by_username(username)
+                if parsed[0] == -1:
+                    doc = await identity_service.resolve_user(
+                        client, message, args[0], create=True
+                    )
                     if doc is None:
-                        await reply_html(client, message, msgs.error("User not found. They must start the bot."))
+                        await reply_html(client, message, msgs.error("User not found."))
                         return
                     target_id = doc["user_id"]
                 else:
-                    target_id = pid
+                    target_id = parsed[0]
+            elif users_db.is_uid(args[0]):
+                amount_idx = 1
+                doc = await identity_service.resolve_user(
+                    client, message, args[0], create=True
+                )
+                if doc is None:
+                    await reply_html(client, message, msgs.error("User not found."))
+                    return
+                target_id = doc["user_id"]
 
         if target_id is None:
             await reply_html(
@@ -105,7 +115,8 @@ def register(app: Client) -> None:
             await reply_html(client, message, msgs.error(err))
             return
 
-        receiver_doc = await users_db.get_or_create_user(target_id)
+        # Auto-register the receiver through the central identity layer.
+        receiver_doc = await identity_service.ensure_user(target_id)
         payment_tax = await tax_service.system_tax_amount("payments", amount)
         result = await economy.transfer(
             message.from_user.id, target_id, amount, tax=payment_tax
@@ -150,20 +161,29 @@ def register(app: Client) -> None:
         await ensure_user(client, message)
         args = message.command[1:]
 
-        # Target priority: reply user id > explicit numeric id > username lookup.
+        # Target priority: reply user id > explicit id / @username / UID.
         target_id = target_from_message(message)
         if target_id is None and args:
             parsed = parse_target_arg(args[0])
             if parsed is not None:
-                pid, username = parsed
-                if pid == -1:
-                    doc = await users_db.get_user_by_username(username)
+                if parsed[0] == -1:
+                    doc = await identity_service.resolve_user(
+                        client, message, args[0], create=True
+                    )
                     if doc is None:
-                        await reply_html(client, message, msgs.error("User not found. They must start the bot."))
+                        await reply_html(client, message, msgs.error("User not found."))
                         return
                     target_id = doc["user_id"]
                 else:
-                    target_id = pid
+                    target_id = parsed[0]
+            elif users_db.is_uid(args[0]):
+                doc = await identity_service.resolve_user(
+                    client, message, args[0], create=True
+                )
+                if doc is None:
+                    await reply_html(client, message, msgs.error("User not found."))
+                    return
+                target_id = doc["user_id"]
 
         if target_id is None:
             await reply_html(
@@ -176,7 +196,7 @@ def register(app: Client) -> None:
             return
 
         robber_doc = await users_db.get_user(message.from_user.id)
-        target_doc = await users_db.get_or_create_user(target_id)
+        target_doc = await identity_service.ensure_user(target_id)
         result = await rob_service.attempt(message.from_user.id, target_id)
         await reply_html(client, message, msgs.rob_result(result, robber_doc, target_doc))
         if result["success"]:

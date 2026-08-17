@@ -11,6 +11,7 @@ from games import bet as bet_game, fly as fly_game, mines as mines_game
 from database import games as games_db
 from handlers.common import ensure_user, safe_handler
 from services import game_engine
+from services import identity as identity_service
 from utils import messages as msgs
 from utils.money import format_money
 from utils.sender import answer_callback, edit_html, reply_html
@@ -107,6 +108,10 @@ def register(app: Client) -> None:
             return
         session_id, action = parsed
         user_id = callback.from_user.id
+        if callback.from_user:
+            await identity_service.ensure_user(
+                user_id, callback.from_user.username, callback.from_user.first_name
+            )
         chat_id = callback.message.chat.id
         message_id = callback.message.id
         try:

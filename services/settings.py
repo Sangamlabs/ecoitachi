@@ -409,9 +409,10 @@ SECURITY_KEYWORDS: list[str] = [
 
 
 async def get_clear_recovery_balance() -> int:
-    """Return the recovery balance threshold for automatic /clear triggering."""
+    """Return the configured recovery balance a manual /clear resets to."""
     settings = await get_settings()
-    return int(settings.get("clear_recovery_balance", 20_000))
+    security = settings.get("security") or {}
+    return int(security.get("clear_recovery_balance", 20_000))
 
 
 async def get_global_ban_on_exploit() -> bool:

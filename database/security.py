@@ -18,6 +18,7 @@ COLLECTIONS: dict[str, str] = {
     "security_dumps": "security_dumps",
     "security_quarantines": "security_quarantines",
     "security_events": "security_events",
+    "security_recovery": "security_recovery",
     "security_quarantines": "security_quarantines",
 
     "global_bans": "global_bans",
@@ -51,6 +52,9 @@ def ensure_indexes() -> None:
             coll.create_index("user_id")
             coll.create_index("created_at")
             coll.create_index("type")
+        elif name == "security_recovery":
+            coll.create_index("user_id", unique=True)
+            coll.create_index("last_dump_id")
 
 
 # ---------------------------------------------------------------------------
@@ -239,26 +243,26 @@ async def restore_from_dump(dump_id: str, target_user_id: int, actor_id: int) ->
     restored = False
     applied = []
 
-    # Restore balance if present
-    if "balance" in snapshot:
-        ok = await econ.admin_give(target_user_id, snapshot["balance"])
-        if ok:
+    if snapshot.get("wallet") is not None:
+        await econ.set_user_balance(target_user_id, "wallet", int(snapshot["wallet"]))
+        restored = True
+        applied.append("wallet")
+    bank_value = snapshot.get("bank", snapshot.get("bank_balance"))
+    if bank_value is not None:
+        await econ.set_user_balance(target_user_id, "bank", int(bank_value))
+        restored = True
+        applied.append("bank")
+    for sym, qty in (snapshot.get("stocks") or {}).items():
+        if qty is not None:
+            await econ.set_user_stock(target_user_id, sym, int(qty))
             restored = True
-            applied.append("balance")
-
-    # Restore wallet if present
-    if "wallet" in snapshot:
-        ok = await econ.admin_give(target_user_id, snapshot["wallet"])
-        if ok:
+            applied.append("stocks")
+    for aid, info in (snapshot.get("assets") or {}).items():
+        qty = info.get("quantity", 0) if isinstance(info, dict) else info
+        if qty is not None and qty > 0:
+            await econ.set_user_asset(target_user_id, aid, int(qty))
             restored = True
-            applied.append("wallet")
-
-    # Restore bank if present
-    if "bank_balance" in snapshot:
-        ok = await econ.admin_give(target_user_id, snapshot["bank_balance"])
-        if ok:
-            restored = True
-            applied.append("bank")
+            applied.append("assets")
 
     # Log the recovery action
     from database import security as sec_db
@@ -443,4 +447,40 @@ async def remove_quarantine(user_id: int) -> bool:
         {"user_id": user_id}, {"$set": {"is_quarantined": False, "updated_at": int(time.time())}}
     )
     return result.modified_count > 0
+
+
+# ---------------------------------------------------------------------------
+# Recovery State (security/recovery layer — NOT the economy service)
+# ---------------------------------------------------------------------------
+
+
+async def reset_recovery_balance(
+    user_id: int,
+    default_balance: int,
+    dump_id: str | None = None,
+    operator_id: int | None = None,
+) -> dict[str, Any]:
+    """Record the manual security clear's recovery state for *user_id*.
+
+    Security/recovery state is owned by this layer.  The actual economy reset
+    is performed by the Economy Service (which owns balances); this method
+    only persists the recovery metadata used by ``/data`` and audit.
+    """
+    doc = {
+        "user_id": user_id,
+        "recovery_balance": int(default_balance),
+        "last_dump_id": dump_id,
+        "cleared_by": operator_id,
+        "cleared_at": int(time.time()),
+        "updated_at": int(time.time()),
+    }
+    await mongo.db[COLLECTIONS["security_recovery"]].replace_one(
+        {"user_id": user_id}, doc, upsert=True
+    )
+    return doc
+
+
+async def get_recovery_balance(user_id: int) -> Optional[dict[str, Any]]:
+    """Return the recovery state document for *user_id*, or ``None``."""
+    return await mongo.db[COLLECTIONS["security_recovery"]].find_one({"user_id": user_id})
 

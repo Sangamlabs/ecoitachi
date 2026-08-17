@@ -189,6 +189,63 @@ async def admin_remove(user_id: int, amount: int, actor_id: int) -> None:
         raise InsufficientBalance(amount, user.get("wallet", 0))
 
 
+async def get_user_economy_snapshot(user_id: int) -> dict[str, Any]:
+    """Read-only snapshot of a user's economy for security dumps / recovery."""
+    user = await users_db.get_user(user_id)
+    if user is None:
+        return {"wallet": None, "bank": None, "stocks": {}, "assets": {}}
+
+    from database import asset_holdings as ah_db, stocks as stocks_db
+
+    stocks: dict[str, Any] = {}
+    for holding in await stocks_db.get_user_holdings(user_id):
+        stocks[holding["symbol"]] = holding.get("quantity", 0)
+
+    assets: dict[str, Any] = {}
+    for holding in await ah_db.get_user_holdings(user_id):
+        assets[holding["asset_id"]] = {
+            "quantity": holding.get("quantity", 0),
+            "cost": holding.get("total_invested", 0),
+        }
+
+    return {
+        "wallet": int(user.get("wallet", 0)),
+        "bank": int(user.get("bank", 0)),
+        "stocks": stocks,
+        "assets": assets,
+    }
+
+
+async def set_user_balance(user_id: int, field: str, value: int) -> None:
+    """Atomically set one balance field (``wallet`` / ``bank``) to ``value``.
+
+    Used by manual security recovery to restore a saved snapshot.  Guards
+    against negative balances and unknown fields.
+    """
+    if field not in ("wallet", "bank"):
+        raise MoneyError(f"Unknown balance field: {field}")
+    value = int(value)
+    if value < 0:
+        raise MoneyError("Balance cannot be negative.")
+    if await users_db.get_user(user_id) is None:
+        raise UserNotFound("User not registered. Ask them to start the bot.")
+    await users_db.set_user_field(user_id, field, value)
+
+
+async def set_user_stock(user_id: int, symbol: str, quantity: float) -> None:
+    """Restore an exact stock holding quantity (used by dump recovery)."""
+    from database import stocks as stocks_db
+
+    await stocks_db.set_holding_quantity(user_id, symbol, quantity)
+
+
+async def set_user_asset(user_id: int, asset_id: str, quantity: float) -> None:
+    """Restore an exact asset holding quantity (used by dump recovery)."""
+    from database import asset_holdings as ah_db
+
+    await ah_db.set_holding_quantity(user_id, asset_id, quantity)
+
+
 async def mongo_db_update_guarded(user_id: int, amount: int, inc: dict[str, int]):
     """Run a guarded atomic wallet update and return the updated user doc."""
     return await mongo.db[users_db.COLLECTION].find_one_and_update(

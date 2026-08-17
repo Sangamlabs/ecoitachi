@@ -124,6 +124,19 @@ async def add_holding(user_id: int, symbol: str, quantity: float) -> None:
     )
 
 
+async def set_holding_quantity(user_id: int, symbol: str, quantity: float) -> None:
+    """Restore an exact holding quantity (used by security dump restore)."""
+    symbol = symbol.upper()
+    if quantity is None or quantity <= 1e-12:
+        await mongo.db[HOLDINGS].delete_one({"user_id": user_id, "symbol": symbol})
+        return
+    await mongo.db[HOLDINGS].update_one(
+        {"user_id": user_id, "symbol": symbol},
+        {"$set": {"quantity": quantity}},
+        upsert=True,
+    )
+
+
 async def remove_holding(user_id: int, symbol: str, quantity: float) -> bool:
     """Remove quantity; returns False if the user does not own enough."""
     result = await mongo.db[HOLDINGS].update_one(

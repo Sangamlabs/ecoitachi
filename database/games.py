@@ -29,6 +29,10 @@ async def insert_session(doc: dict[str, Any]) -> None:
     await mongo.db[SESSIONS].insert_one(doc)
 
 
+async def count_sessions_for_user(user_id: int) -> int:
+    return await mongo.db[SESSIONS].count_documents({"user_id": user_id})
+
+
 async def bind_message(game_id: str, message_id: int) -> None:
     """Attach the inline board's message id to a session (set after sending)."""
     await mongo.db[SESSIONS].update_one(

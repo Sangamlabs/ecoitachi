@@ -19,6 +19,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 
 from database import security as sec_db
+from database import users as users_db
 from services import settings as settings_service
 from utils.permissions import is_owner, is_sudo
 from utils.messages import error, success, info
@@ -285,17 +286,73 @@ async def check_economy_integrity(user_id: int) -> Optional[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-async def manual_clear(user_id: int, target_user_id: Optional[int] = None) -> tuple[bool, str]:
-    """Owner‑only manual clear of a user's recovery balance."""
+async def manual_clear(operator_id: int, target_user_id: Optional[int] = None) -> tuple[bool, str, str | None]:
+    """Owner-only manual clear of a user's economy after a full backup dump.
+
+    Flow:
+        1. snapshot the user's economy,
+        2. create a recovery dump + generate a recovery ID (dump_id),
+        3. record an audit event,
+        4. reset the economy wallet to the configured recovery balance,
+        5. persist recovery state in the security/recovery database layer,
+        6. return ``(ok, message, recovery_id)``.
+
+    The economy reset is performed through the Economy Service (owner of
+    balances); recovery state is owned by the security/recovery DB layer.
+    """
     if target_user_id is None:
-        target_user_id = user_id
+        target_user_id = operator_id
+
     clear_balance = await settings_service.get_clear_recovery_balance()
+
+    # 1 + 2. Snapshot + dump (generates the recovery ID).
+    dump = await manual_dump_user(
+        target_user_id,
+        reason=f"/clear by admin {operator_id}",
+    )
+    recovery_id = dump["dump_id"]
+
+    # 3. Audit — clear initiated.
+    await sec_db.create_event(
+        event_id=f"EVT-{uuid.uuid4().hex[:8].upper()}",
+        event_type="recovery_clear_initiated",
+        user_id=target_user_id,
+        actor_id=operator_id,
+        details={"dump_id": recovery_id, "action": "/clear", "clear_balance": clear_balance},
+    )
+
+    # 4. Reset the economy wallet through the Economy Service.
     from services import economy as econ
-    ok = await econ.reset_recovery_balance(target_user_id, clear_balance)
-    if ok:
-        return True, f"Recovery balance cleared for user {target_user_id}. Default set to {clear_balance}."
+
+    if await users_db.user_exists(target_user_id):
+        await econ.set_user_balance(target_user_id, "wallet", clear_balance)
+        ok = True
     else:
-        return False, "Nothing to clear or user not found."
+        ok = False
+
+    # 5. Persist recovery state in the security/recovery DB layer.
+    await sec_db.reset_recovery_balance(
+        target_user_id, clear_balance, dump_id=recovery_id, operator_id=operator_id
+    )
+
+    # 3 (continued). Audit — clear completed.
+    await sec_db.create_event(
+        event_id=f"EVT-{uuid.uuid4().hex[:8].upper()}",
+        event_type="recovery_balance_cleared",
+        user_id=target_user_id,
+        actor_id=operator_id,
+        details={"dump_id": recovery_id, "cleared_balance": clear_balance, "action": "/clear"},
+    )
+
+    if ok:
+        return (
+            True,
+            f"User <code>{target_user_id}</code> cleared.\n"
+            f"Recovery ID: <code>{recovery_id}</code> (use <code>/recover {recovery_id}</code> to restore).\n"
+            f"Wallet reset to {clear_balance}.",
+            recovery_id,
+        )
+    return False, f"User <code>{target_user_id}</code> not found.", None
 
 
 # ---------------------------------------------------------------------------
@@ -316,12 +373,16 @@ async def manual_dump_user(user_id: int, reason: str = "Manual dump before clear
 
 
 async def manual_restore(dump_id: str, operator_id: int) -> tuple[bool, str]:
-    """Owner‑only restore from a dump."""
+    """Owner-only restore from a dump back to the dump's original user."""
     if not await is_owner(operator_id):
         return False, "Only the bot owner can restore from security dumps."
-    success = await restore_from_dump(dump_id, operator_id)
+    dump = await sec_db.get_dump(dump_id)
+    if not dump:
+        return False, f"Dump <code>{dump_id}</code> not found, already used, or restore failed."
+    target_user_id = dump.get("user_id")
+    success = await restore_from_dump(dump_id, target_user_id)
     if success:
-        return True, f"Successfully restored from dump <code>{dump_id}</code>."
+        return True, f"Successfully restored economy for user <code>{target_user_id}</code> from dump <code>{dump_id}</code>."
     else:
         return False, f"Dump <code>{dump_id}</code> not found, already used, or restore failed."
 
@@ -337,7 +398,7 @@ async def manual_restorecase(case_id: str, operator_id: int) -> tuple[bool, str]
     user_id = case["user_id"]
     detail = case.get("detail", "").lower()
     if "recovery" in detail or "restore" in detail:
-        ok, msg = await manual_clear(operator_id, user_id)
+        ok, msg, _recovery_id = await manual_clear(operator_id, user_id)
         if ok:
             return True, f"Recovered user {user_id} from case <code>{case_id}</code>."
         return False, msg

@@ -17,6 +17,7 @@ from database import stocks as stocks_db
 from database.mongo import mongo
 from handlers.common import ensure_user, safe_handler
 from services import bank as bank_service, economy, settings as settings_service
+from services import identity as identity_service
 from services import tax as tax_service
 from services import transaction as tx_service
 from services import security as security_service
@@ -43,6 +44,7 @@ from utils.validators import (
     is_safe_percent,
     is_safe_probability,
     parse_amount_or_error,
+    target_from_message,
     validate_min_max,
 )
 
@@ -71,28 +73,20 @@ FIELD_PARSERS = {
 }
 
 
-async def _resolve_target(message: Message, arg: str | None) -> int | None:
-    """Resolve a numeric user id from @username, numeric id or reply."""
-    if message.reply_to_message and message.reply_to_message.from_user:
-        return message.reply_to_message.from_user.id
-    if not arg:
+TARGET_USAGE = "User not found. Provide a Telegram ID, @username, UNOITACHI UID, or reply to the user."
+
+
+async def _need_target_or_error(client: Client, message: Message, arg: str | None) -> int | None:
+    """Resolve a target through the central identity resolver and return its id.
+
+    Unknown users are auto-registered (no ``/start`` required).  Returns
+    ``None`` after replying with a clear usage error when unresolvable.
+    """
+    doc = await identity_service.resolve_user(client, message, arg, create=True)
+    if doc is None:
+        await reply_html(client, message, msgs.error(TARGET_USAGE))
         return None
-    if arg.startswith("@"):
-        from database import users as users_db
-
-        doc = await users_db.get_user_by_username(arg[1:])
-        return doc["user_id"] if doc else None
-    if arg.isdigit():
-        return int(arg)
-    return None
-
-
-async def _need_user_or_error(client: Client, message: Message, arg: str | None) -> int | None:
-    target = await _resolve_target(message, arg)
-    if target is None or not await users_db.user_exists(target):
-        await reply_html(client, message, msgs.error("User not found. They must start the bot."))
-        return None
-    return target
+    return doc["user_id"]
 
 
 def _validate_fly_settings(difficulty: str, settings: dict) -> str | None:
@@ -127,7 +121,7 @@ def register(app: Client) -> None:
     @owner_only
     @safe_handler
     async def cmd_addsudo(client: Client, message: Message):
-        target = await _resolve_target(message, message.command[1] if len(message.command) > 1 else None)
+        target = await _need_target_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
         if target is None:
             await reply_html(client, message, msgs.error("Usage: <code>/addsudo @user</code> or reply."))
             return
@@ -140,7 +134,7 @@ def register(app: Client) -> None:
     @owner_only
     @safe_handler
     async def cmd_rsudo(client: Client, message: Message):
-        target = await _resolve_target(message, message.command[1] if len(message.command) > 1 else None)
+        target = await _need_target_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
         if target is None:
             return
         if await utils_is_owner(target):
@@ -165,12 +159,15 @@ def register(app: Client) -> None:
     async def cmd_give(client: Client, message: Message):
         await ensure_user(client, message)
         args = message.command[1:]
-        target = await _need_user_or_error(client, message, args[0] if args else None)
+        reply_target = target_from_message(message)
+        target = await _need_target_or_error(
+            client, message, None if reply_target is not None else (args[0] if args else None)
+        )
         if target is None:
             return
-        amount, err = parse_amount_or_error(args[1] if len(args) > 1 else "")
+        amount, err = parse_amount_or_error(args[1] if not reply_target and len(args) > 1 else (args[0] if reply_target else ""))
         if err:
-            await reply_html(client, message, msgs.error(f"Usage: <code>/give @user amount</code>. {err}"))
+            await reply_html(client, message, msgs.error(f"Usage: <code>/give @user amount</code> or reply + <code>/give amount</code>. {err}"))
             return
         actor = message.from_user.id
         await economy.admin_give(target, amount, actor)
@@ -194,12 +191,25 @@ def register(app: Client) -> None:
     async def cmd_remove(client: Client, message: Message):
         await ensure_user(client, message)
         args = message.command[1:]
-        target = await _need_user_or_error(client, message, args[0] if args else None)
+        reply_target = target_from_message(message)
+        target = await _need_target_or_error(
+            client, message, None if reply_target is not None else (args[0] if args else None)
+        )
         if target is None:
             return
-        amount, err = parse_amount_or_error(args[1] if len(args) > 1 else "")
+        amount_raw = (
+            args[0] if reply_target else (args[1] if len(args) > 1 else "")
+        )
+        amount, err = parse_amount_or_error(amount_raw)
         if err:
-            await reply_html(client, message, msgs.error(f"Usage: <code>/remove @user amount</code>. {err}"))
+            await reply_html(
+                client, message,
+                msgs.error(
+                    f"Usage: <code>/remove USER amount</code> "
+                    f"(USER = Telegram ID, @username or UID), or reply to a user with "
+                    f"<code>/remove amount</code>. {err}"
+                ),
+            )
             return
         actor = message.from_user.id
         before = await economy.get_balance(target)
@@ -671,7 +681,7 @@ def register(app: Client) -> None:
     @sudo_only
     @safe_handler
     async def cmd_freeze(client: Client, message: Message):
-        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        target = await _need_target_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
         if target is None or target == 6356015122:
             if target == 6356015122:
                 await reply_html(client, message, msgs.error("Owner cannot be frozen."))
@@ -683,7 +693,7 @@ def register(app: Client) -> None:
     @sudo_only
     @safe_handler
     async def cmd_unfreeze(client: Client, message: Message):
-        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        target = await _need_target_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
         if target is None:
             return
         await users_db.set_user_flags(target, is_frozen=False)
@@ -694,7 +704,7 @@ def register(app: Client) -> None:
     @sudo_only
     @safe_handler
     async def cmd_ban(client: Client, message: Message):
-        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        target = await _need_target_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
         if target is None:
             return
         if target == message.from_user.id:
@@ -710,7 +720,7 @@ def register(app: Client) -> None:
     @sudo_only
     @safe_handler
     async def cmd_unban(client: Client, message: Message):
-        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        target = await _need_target_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
         if target is None:
             return
         await users_db.set_user_flags(target, is_banned=False)
@@ -721,15 +731,63 @@ def register(app: Client) -> None:
     @sudo_only
     @safe_handler
     async def cmd_userinfo(client: Client, message: Message):
-        target = await _resolve_target(message, message.command[1] if len(message.command) > 1 else None)
-        if target is None or not await users_db.user_exists(target):
+        doc = await identity_service.resolve_user(
+            client, message, message.command[1] if len(message.command) > 1 else None, create=False
+        )
+        if doc is None:
             await reply_html(client, message, msgs.error("User not found."))
             return
-        doc = await users_db.get_user(target)
         from database.transactions import count_for_user
 
-        stats = {"transactions": await count_for_user(target)}
+        stats = {"transactions": await count_for_user(doc["user_id"])}
         await reply_html(client, message, msgs.userinfo(doc, stats))
+
+    # ---------------- /data - admin user activity report ----------------
+    @app.on_message(filters.command("data") & NOT_CHANNEL)
+    @security_sudo_or_owner
+    @safe_handler
+    async def cmd_data(client: Client, message: Message):
+        args = message.command[1:]
+        doc = await identity_service.resolve_user(
+            client,
+            message,
+            None if target_from_message(message) is not None else (args[0] if args else None),
+            create=False,
+        )
+        if doc is None:
+            await reply_html(
+                client, message,
+                msgs.error(
+                    "User not found. Provide a Telegram ID, @username, UNOITACHI UID, "
+                    "or reply to a user with <code>/data</code>."
+                ),
+            )
+            return
+        user_id = doc["user_id"]
+
+        from database import asset_holdings as ah_db, security as sec_db, stocks as stocks_db
+        from database.transactions import count_for_user, recent_by_user
+
+        stock_holdings = await stocks_db.get_user_holdings(user_id)
+        asset_holdings = await ah_db.get_user_holdings(user_id)
+        cases = await sec_db.list_cases(user_id=user_id)
+        dumps = await sec_db.list_dumps(user_id=user_id)
+        recovery = await sec_db.get_recovery_balance(user_id)
+        quarantine = await sec_db.get_quarantine(user_id)
+        transactions = await recent_by_user(user_id, limit=8)
+
+        report = msgs.user_data_report(
+            user=doc,
+            stock_holdings=stock_holdings,
+            asset_holdings=asset_holdings,
+            cases=cases,
+            dumps=dumps,
+            recovery=recovery,
+            quarantine=quarantine,
+            transactions=transactions,
+            transaction_count=await count_for_user(user_id),
+        )
+        await reply_html(client, message, report)
 
     # ---------------- ECONSTATS ----------------
     @app.on_message(filters.command("econstats") & NOT_CHANNEL)
@@ -752,7 +810,7 @@ def register(app: Client) -> None:
     @security_sudo_or_owner
     @safe_handler
     async def cmd_gban(client: Client, message: Message):
-        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        target = await _need_target_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
         if target is None:
             return
         # Owner immunity check - owner cannot be globally banned
@@ -763,10 +821,6 @@ def register(app: Client) -> None:
             await reply_html(client, message, msgs.error("You cannot globally ban the owner."))
             return
         reason = message.command[2] if len(message.command) > 2 else None
-        # Check if this is a critical secret leak that should auto-ban
-        from services import security as sec_svc
-        # Detect if message contains secret (already handled by middleware)
-        # For now, proceed with global ban
         banned_by = message.from_user.id
         # Create security case for critical violations
         if "exploit" in (reason or "").lower() or "critical" in (reason or "").lower():
@@ -794,7 +848,7 @@ def register(app: Client) -> None:
     @security_sudo_or_owner
     @safe_handler
     async def cmd_ungban(client: Client, message: Message):
-        target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        target = await _need_target_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
         if target is None:
             return
         if target == 6356015122:
@@ -813,14 +867,22 @@ def register(app: Client) -> None:
                 msgs.error(f"User <code>{target}</code> was not globally banned."),
             )
 
-    # /clear - Clear recovery balance (owner only)
+    # /clear - Owner-only manual clear (dump + audit + reset + recovery ID)
     @app.on_message(filters.command("clear") & NOT_CHANNEL)
     @owner_only
     @safe_handler
     async def cmd_clear(client: Client, message: Message):
-        target = message.from_user.id
-        ok, msg = await security_service.manual_clear(target)
-        await reply_html(client, message, msgs.success(msg) if ok else msgs.error(msg))
+        args = message.command[1:]
+        target = await _need_target_or_error(
+            client, message, None if target_from_message(message) is not None else (args[0] if args else None)
+        )
+        if target is None:
+            return
+        ok, msg, recovery_id = await security_service.manual_clear(message.from_user.id, target)
+        if ok and recovery_id:
+            await reply_html(client, message, msgs.success(msg))
+        else:
+            await reply_html(client, message, msgs.error(msg))
 
     # /restore - Restore from dump (owner only)
     @app.on_message(filters.command("restore") & NOT_CHANNEL)

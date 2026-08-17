@@ -60,6 +60,11 @@ async def main() -> None:
 
     await asset_service.ensure_market()
 
+    from database import users as users_db
+    backfilled = await users_db.backfill_uids()
+    if backfilled:
+        logger.info("backfilled UNOITACHI UIDs for %d users", backfilled)
+
     app = Client(
         "unoitachi_bot",
         api_id=config.API_ID,
