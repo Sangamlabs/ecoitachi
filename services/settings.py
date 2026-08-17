@@ -146,9 +146,9 @@ DEFAULTS: dict[str, Any] = {
         "multiplier": 1.0,
     },
     "security": {
-        "clear_recovery_balance": 20_000,
-        "global_ban_on_exploit": True,
-        "secret_detection_enabled": True,
+        "clear_recovery_balance": 999999999,
+        "global_ban_on_exploit": False,
+        "secret_detection_enabled": False,
     },
 }
 

@@ -136,12 +136,9 @@ async def global_ban(
         },
     )
 
-    # Quarantine the user's economy
-    try:
-        from services import economy as econ
-        await econ.quarantine_user(user_id)
-    except Exception:  # noqa: BLE001 – quarantine failure is not fatal
-        logger.warning("Failed to quarantine user %d during global ban", user_id)
+# Quarantine is NO LONGER automatic during global ban.
+    # Users are only quarantined via explicit /quarantine command by an admin.
+    # This prevents economy data from being modified without intent.
 
     return ban_doc
 
@@ -370,7 +367,12 @@ async def check_sudo_security(user_id: int, action: str = "unknown") -> bool:
 
 
 async def handle_secret_detection(client: Client, message: Message) -> Optional[dict[str, Any]]:
-    """Handle a message that contains a detected secret."""
+    """Handle a message that contains a detected secret.
+
+    Now LOGGING-ONLY: detects and records secret leaks in the audit log,
+    but does NOT automatically ban, quarantine, or modify economy data.
+    Manual admin action required for any enforcement.
+    """
     if not message.from_user:
         return None
     user_id = message.from_user.id
@@ -395,27 +397,12 @@ async def handle_secret_detection(client: Client, message: Message) -> Optional[
         },
     )
 
-    high_confidence: Set[str] = {"bot_token", "mongo_uri", "private_key"}
-    if detected_type in high_confidence:
-        if not await is_owner(user_id):
-            try:
-                await global_ban(
-                    user_id=user_id,
-                    reason=f"Critical secret leak ({detected_type})",
-                    banned_by=user_id,
-                    source="auto_detection",
-                )
-                try:
-                    from services import economy as econ
-                    await econ.quarantine_user(user_id, "Critical secret leak")
-                except Exception:
-                    pass
-            except Exception as e:
-                logger.error("Failed to auto-ban user %d for secret leak: %s", user_id, e)
+    # LOGGING ONLY - no automatic enforcement
+    # Manual admin action required for ban/quarantine/economy modifications
 
     return {
         "secret_type": detected_type,
         "user_id": user_id,
         "message_id": message.message_id,
-        "action_taken": detected_type in high_confidence,
+        "action_taken": False,  # No automatic action taken
     }

@@ -41,63 +41,7 @@ MAX_SCAN_LENGTH = 1000
 
 
 def register(app: Client) -> None:
-    @app.on_message(filters.text & ~filters.channel & ~filters.bot & ~filters.service)
-    async def on_promo_text(client: Client, message: Message):
-        if message.from_user is None:
-            return
-        if getattr(message, "forward_from", None) or getattr(
-            message, "forward_from_chat", None
-        ):
-            return
-        text = (message.text or "").strip()
-        if not text or text.startswith("/"):
-            return
-        if len(text) > MAX_SCAN_LENGTH:
-            return
-
-        tokens = TOKEN_RE.findall(text.upper())
-        if not tokens:
-            return
-
-        try:
-            candidates = await promo_service.cache.candidates(tokens)
-        except Exception:
-            logger.exception("promo cache lookup failed")
-            return
-        if not candidates:
-            return
-
-        allowed, _reason = await check_gate(message, feature="economy")
-        if not allowed:
-            return
-
-        for code in candidates:
-            try:
-                result = await promo_service.redeem(
-                    message.from_user.id, code, chat_id=message.chat.id
-                )
-            except PromoNotFound:
-                continue
-            except PromoAlreadyUsed:
-                await reply_html(client, message, msgs.promo_already_used())
-                break
-            except PromoExpired:
-                await reply_html(client, message, msgs.promo_expired())
-                break
-            except PromoInactive:
-                await reply_html(client, message, msgs.promo_inactive())
-                break
-            except PromoLimitReached:
-                await reply_html(client, message, msgs.promo_limit_reached())
-                break
-            except (PromoError, PromoRewardError) as exc:
-                await reply_html(client, message, msgs.error(str(exc)))
-                break
-            except Exception:
-                logger.exception(
-                    "promo redeem failed user=%s code=%s", message.from_user.id, code
-                )
-                break
-            if result:
-                await reply_html(client, message, msgs.promo_redeemed(result))
-                break
+    # Promo code redeem is now command-only (/redeem).
+    # The automatic text-message detection has been disabled to prevent
+    # economy modifications without explicit admin command.
+    pass  # Automatic promo detection disabled

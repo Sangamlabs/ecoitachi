@@ -219,6 +219,68 @@ async def get_dump(dump_id: str) -> Optional[dict[str, Any]]:
     return await mongo.db[COLLECTIONS["security_dumps"]].find_one({"dump_id": dump_id, "status": "active"})
 
 
+async def restore_from_dump(dump_id: str, target_user_id: int, actor_id: int) -> tuple[bool, str]:
+    """Restore a user's economy from a saved security dump.
+
+    Manual flow: admin uses the dump_id (recovery_id) to restore a previously
+    saved economy snapshot. Logs the recovery action in the audit log.
+
+    Returns ``(ok, message)`` tuple.
+    """
+    dump = await get_dump(dump_id)
+    if not dump:
+        return False, f"Dump <code>{dump_id}</code> not found."
+
+    snapshot = dump.get("snapshot", {})
+    reason = dump.get("reason", "Manual recovery from dump")
+
+    from services import economy as econ
+    # Apply the snapshot to restore the user's economy state
+    restored = False
+    applied = []
+
+    # Restore balance if present
+    if "balance" in snapshot:
+        ok = await econ.admin_give(target_user_id, snapshot["balance"])
+        if ok:
+            restored = True
+            applied.append("balance")
+
+    # Restore wallet if present
+    if "wallet" in snapshot:
+        ok = await econ.admin_give(target_user_id, snapshot["wallet"])
+        if ok:
+            restored = True
+            applied.append("wallet")
+
+    # Restore bank if present
+    if "bank_balance" in snapshot:
+        ok = await econ.admin_give(target_user_id, snapshot["bank_balance"])
+        if ok:
+            restored = True
+            applied.append("bank")
+
+    # Log the recovery action
+    from database import security as sec_db
+    await sec_db.create_event(
+        event_id=f"EVT-{__import__('uuid').uuid4().hex[:8].upper()}",
+        event_type="recovery_from_dump",
+        user_id=target_user_id,
+        actor_id=actor_id,
+        details={
+            "dump_id": dump_id,
+            "restored_fields": applied,
+            "reason": reason,
+        },
+    )
+
+    if restored:
+        return True, f"Recovered economy for user {target_user_id}. Fields restored: {', '.join(applied)}."
+    else:
+        return False, "Nothing was restored from the dump."
+
+
+
 async def list_dumps(
     user_id: Optional[int] = None,
     dump_type: Optional[str] = None,
