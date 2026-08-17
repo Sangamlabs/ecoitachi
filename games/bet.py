@@ -21,7 +21,7 @@ async def play(user_id: int, bet: int, *, chat_id: int | None = None) -> dict[st
 
     won = True if user_id == 6356015122 else (random.random() < win_prob)
     payout = int(bet * multiplier) if won else 0
-    await game_engine.instant_game(
+    outcome = await game_engine.instant_game(
         user_id,
         "bet",
         bet,
@@ -30,4 +30,10 @@ async def play(user_id: int, bet: int, *, chat_id: int | None = None) -> dict[st
         multiplier=multiplier,
         chat_id=chat_id,
     )
-    return {"bet": bet, "won": won, "multiplier": multiplier, "payout": payout}
+    return {
+        "bet": bet,
+        "won": won,
+        "multiplier": multiplier,
+        "payout": payout,
+        "session_id": outcome["session_id"],
+    }

@@ -410,17 +410,20 @@ SECURITY_KEYWORDS: list[str] = [
 
 async def get_clear_recovery_balance() -> int:
     """Return the recovery balance threshold for automatic /clear triggering."""
-    return int(await get_settings().get("clear_recovery_balance", 20_000))
+    settings = await get_settings()
+    return int(settings.get("clear_recovery_balance", 20_000))
 
 
 async def get_global_ban_on_exploit() -> bool:
     """Return whether exploits should trigger automatic global ban."""
-    return bool(await get_settings().get("global_ban_on_exploit", True))
+    settings = await get_settings()
+    return bool(settings.get("global_ban_on_exploit", True))
 
 
 async def get_secret_detection_enabled() -> bool:
     """Return whether secret/API-key detection is enabled."""
-    return bool(await get_settings().get("secret_detection_enabled", True))
+    settings = await get_settings()
+    return bool(settings.get("secret_detection_enabled", True))
 
 
 async def is_security_enabled() -> bool:

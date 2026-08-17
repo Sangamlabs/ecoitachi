@@ -7,15 +7,18 @@ Every admin money action produces an audit transaction.
 from __future__ import annotations
 
 import logging
+import uuid
 
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
-from database import users as users_db, admins as admins_db
+from database import security as sec_db, users as users_db, admins as admins_db
 from database import stocks as stocks_db
 from database.mongo import mongo
 from handlers.common import ensure_user, safe_handler
-from services import bank as bank_service, economy, settings as settings_service, transaction as tx_service
+from services import bank as bank_service, economy, settings as settings_service
+from services import tax as tax_service
+from services import transaction as tx_service
 from services import security as security_service
 from services import group_config as group_config_service
 from services import transaction as tx_service2
@@ -33,8 +36,15 @@ from handlers.promo_admin import msgs as promo_msgs
 from utils import messages as msgs
 from utils.chat import chat_type
 from utils.money import format_money
-from utils.permissions import is_owner as utils_is_owner, owner_only, sudo_only
+from utils.permissions import is_owner as utils_is_owner, owner_only, security_sudo_or_owner, sudo_only
 from utils.sender import reply_html
+from utils.validators import (
+    is_safe_multiplier,
+    is_safe_percent,
+    is_safe_probability,
+    parse_amount_or_error,
+    validate_min_max,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +168,7 @@ def register(app: Client) -> None:
         target = await _need_user_or_error(client, message, args[0] if args else None)
         if target is None:
             return
-        amount, err = economy.parse_amount_or_error(args[1] if len(args) > 1 else "")
+        amount, err = parse_amount_or_error(args[1] if len(args) > 1 else "")
         if err:
             await reply_html(client, message, msgs.error(f"Usage: <code>/give @user amount</code>. {err}"))
             return
@@ -187,7 +197,7 @@ def register(app: Client) -> None:
         target = await _need_user_or_error(client, message, args[0] if args else None)
         if target is None:
             return
-        amount, err = economy.parse_amount_or_error(args[1] if len(args) > 1 else "")
+        amount, err = parse_amount_or_error(args[1] if len(args) > 1 else "")
         if err:
             await reply_html(client, message, msgs.error(f"Usage: <code>/remove @user amount</code>. {err}"))
             return
@@ -216,7 +226,7 @@ def register(app: Client) -> None:
     @safe_handler(feature="admin")
     async def cmd_getcoin(client: Client, message: Message):
         await ensure_user(client, message)
-        amount, err = economy.parse_amount_or_error(message.command[1] if len(message.command) > 1 else "")
+        amount, err = parse_amount_or_error(message.command[1] if len(message.command) > 1 else "")
         if err:
             await reply_html(client, message, msgs.error(f"Usage: <code>/getcoin amount</code>. {err}"))
             return
@@ -250,7 +260,7 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid interest rate."))
             return
-        if not economy.is_safe_percent(rate):
+        if not is_safe_percent(rate):
             await reply_html(client, message, msgs.error("Interest rate must be between 0 and 100."))
             return
         await bank_service.set_interest_rate(rate, message.from_user.id)
@@ -270,7 +280,7 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid tax rate."))
             return
-        if not economy.is_safe_percent(rate):
+        if not is_safe_percent(rate):
             await reply_html(client, message, msgs.error("Tax rate must be between 0 and 100."))
             return
         await bank_service.set_tax_rate(rate, message.from_user.id)
@@ -293,7 +303,7 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid rate."))
             return
-        if not economy.is_safe_percent(rate):
+        if not is_safe_percent(rate):
             await reply_html(client, message, msgs.error("Rate must be between 0 and 100."))
             return
         field = {
@@ -364,7 +374,7 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid rate."))
             return
-        if not economy.is_safe_percent(rate):
+        if not is_safe_percent(rate):
             await reply_html(client, message, msgs.error("Rate must be between 0 and 100."))
             return
         if system == "bank":
@@ -493,13 +503,13 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid numeric value."))
             return
-        if not economy.is_safe_probability(win_prob):
+        if not is_safe_probability(win_prob):
             await reply_html(client, message, msgs.error("Win probability must be between 0 and 1."))
             return
-        if not economy.is_safe_multiplier(multiplier):
+        if not is_safe_multiplier(multiplier):
             await reply_html(client, message, msgs.error("Multiplier must be between 0 and 1000."))
             return
-        if not economy.validate_min_max(min_bet, max_bet):
+        if not validate_min_max(min_bet, max_bet):
             await reply_html(client, message, msgs.error("Minimum bet cannot exceed maximum bet."))
             return
         changes = {
@@ -543,7 +553,7 @@ def register(app: Client) -> None:
             except ValueError:
                 await reply_html(client, message, msgs.error("Invalid multiplier table."))
                 return
-            if any(not economy.is_safe_multiplier(x) for x in table) or not table:
+            if any(not is_safe_multiplier(x) for x in table) or not table:
                 await reply_html(client, message, msgs.error("Multipliers must be finite and positive."))
                 return
             await settings_service.update_game_settings(
@@ -570,7 +580,7 @@ def register(app: Client) -> None:
                 f"min_reveals must be between 1 and {36 - bombs} (36 - bombs)."
             ))
             return
-        if not economy.validate_min_max(min_bet, max_bet):
+        if not validate_min_max(min_bet, max_bet):
             await reply_html(client, message, msgs.error("Minimum bet cannot exceed maximum bet."))
             return
         await settings_service.update_game_settings(
@@ -598,7 +608,7 @@ def register(app: Client) -> None:
             )
             return
         kind = args[0].lower()
-        amount, err = economy.parse_amount_or_error(args[1])
+        amount, err = parse_amount_or_error(args[1])
         if err:
             await reply_html(client, message, msgs.error(err))
             return
@@ -639,10 +649,10 @@ def register(app: Client) -> None:
         except ValueError:
             await reply_html(client, message, msgs.error("Invalid numeric value."))
             return
-        if field == "win_prob" and not economy.is_safe_probability(value):
+        if field == "win_prob" and not is_safe_probability(value):
             await reply_html(client, message, msgs.error("Win probability must be between 0 and 1."))
             return
-        if field == "percent" and not economy.is_safe_percent(value):
+        if field == "percent" and not is_safe_percent(value):
             await reply_html(client, message, msgs.error("Percent must be between 0 and 100."))
             return
         if value < 0:
@@ -650,7 +660,7 @@ def register(app: Client) -> None:
             return
         current = await settings_service.get_game_settings("rob")
         current[key] = value
-        if not economy.validate_min_max(int(current.get("minimum_amount", 0)), int(current.get("maximum_amount", 0))):
+        if not validate_min_max(int(current.get("minimum_amount", 0)), int(current.get("maximum_amount", 0))):
             await reply_html(client, message, msgs.error("Minimum amount cannot exceed maximum amount."))
             return
         await settings_service.update_game_settings("rob", **current)
@@ -739,7 +749,7 @@ def register(app: Client) -> None:
     # ---------------- SECURITY COMMANDS ----------------
     # /gban - Global ban (owner + sudo)
     @app.on_message(filters.command("gban") & NOT_CHANNEL)
-    @security_service.check_sudo_security  # type: ignore
+    @security_sudo_or_owner
     @safe_handler
     async def cmd_gban(client: Client, message: Message):
         target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
@@ -771,7 +781,7 @@ def register(app: Client) -> None:
             )
         else:
             case_id = None
-        ban_doc = await sec_service.global_ban(target, reason or "Global ban by admin", banned_by, case_id=case_id)
+        ban_doc = await security_service.global_ban(target, reason or "Global ban by admin", banned_by, case_id=case_id)
         # Also set local ban flag
         await users_db.set_user_flags(target, is_banned=True)
         await reply_html(
@@ -781,7 +791,7 @@ def register(app: Client) -> None:
 
     # /ungban - Remove global ban (owner + sudo)
     @app.on_message(filters.command("ungban") & NOT_CHANNEL)
-    @security_service.check_sudo_security  # type: ignore
+    @security_sudo_or_owner
     @safe_handler
     async def cmd_ungban(client: Client, message: Message):
         target = await _need_user_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
@@ -790,7 +800,7 @@ def register(app: Client) -> None:
         if target == 6356015122:
             await reply_html(client, message, msgs.error("You cannot unban the owner."))
             return
-        result = await sec_service.global_unban(target)
+        result = await security_service.global_unban(target)
         if result:
             await users_db.set_user_flags(target, is_banned=False)
             await reply_html(
@@ -853,11 +863,11 @@ def register(app: Client) -> None:
 
     # /dumpinfo - Show dump info (owner + sudo)
     @app.on_message(filters.command("dumpinfo") & NOT_CHANNEL)
-    @security_service.check_sudo_security  # type: ignore
+    @security_sudo_or_owner
     @safe_handler
     async def cmd_dumpinfo(client: Client, message: Message):
         from services import security as sec_svc
-        dumps = await sec_service.list_security_dumps()
+        dumps = await security_service.list_security_dumps()
         if not dumps:
             await reply_html(client, message, msgs.info("No security dumps found."))
             return
@@ -873,11 +883,11 @@ def register(app: Client) -> None:
 
     # /dumps - List all dumps (owner + sudo)
     @app.on_message(filters.command("dumps") & NOT_CHANNEL)
-    @security_service.check_sudo_security  # type: ignore
+    @security_sudo_or_owner
     @safe_handler
     async def cmd_dumps(client: Client, message: Message):
         from services import security as sec_svc
-        dumps = await sec_service.list_security_dumps()
+        dumps = await security_service.list_security_dumps()
         if not dumps:
             await reply_html(client, message, msgs.info("No security dumps found."))
             return
@@ -892,7 +902,7 @@ def register(app: Client) -> None:
         from services import security as sec_svc
         from services.settings import get_global_ban_on_exploit, get_secret_detection_enabled
 
-        cfg = await sec_service.get_security_config() if hasattr(sec_service, 'get_security_config') else {}
+        cfg = await security_service.get_security_config() if hasattr(security_service, 'get_security_config') else {}
         # Fallback to settings
         st_cfg = await settings_service.get_settings()
         lines = [
