@@ -1,0 +1,166 @@
+UNOITACHI — COMPLETE COMMAND LIST
+=================================
+Generated from the live handler registry (109 commands).
+Targets in square brackets accept Telegram ID, @username, UNOITACHI UID, or replying to a user.
+
+USER COMMANDS
+=============
+Economy
+  /profile              your profile
+  /bal                  check balance
+  /pay @user amount     send money
+  /leader               leaderboard
+  /topbank              top bank deposits
+  /transactions         last 10 transfers (sent & received)
+
+Bank
+  /deposit amount       wallet -> bank
+  /withdraw amount      bank -> wallet (tax applies)
+  /bank                 bank info & interest
+
+Loans
+  /loan DAYS AMOUNT     borrow money
+  /loanpay [amount]     repay a loan
+  /loaninfo             loan rules & rates
+
+Stock Market
+  /stocklist            market overview
+  /stock SYMBOL         stock details
+  /buystock SYMBOL qty  buy
+  /sellstock SYMBOL qty sell
+  /portfolio            your holdings
+
+Asset Market
+  /assets               asset market overview
+  /asset SYMBOL         asset details
+  /assetsinfo [SYMBOL]  market stats / buy-decision info
+  /assetstats           market statistics
+  /buyasset SYMBOL qty  buy (with confirm)
+  /sellasset SYMBOL qty sell
+  /myassets             your asset portfolio
+
+Resale Market
+  /listasset SYMBOL qty price   list your asset for sale
+  /listings                    browse user listings
+  /buylisting ID               buy a listing
+  /mylistings                  your listings
+  /cancellisting ID            remove your own listing
+  /rmlisting ID                remove your own listing (alias)
+
+Games
+  /fly low|medium|high amount  fly game
+  /mines amount                6x6 mines board
+  /bet amount                  coin bet
+  /blackjack amount            play the dealer
+  /rob @user                   steal from a user's bank
+  /join CODE                   join a duel with its 4-digit code
+
+System
+  /start                welcome message
+  /help                 this help
+
+
+ADMIN COMMANDS (owner + sudo)
+=============================
+Economy
+  /give @user amount            give money
+  /remove @user amount          take money
+  /getcoin amount               credit yourself coins
+  /track TX_ID                  full transaction detail
+
+Bank
+  /setinterest rate             interest % per 24h
+  /setincome bank|asset|stock rate   daily income % per 24h
+  /setreward daily|weekly|monthly amount
+  /settax rate                  withdrawal tax %
+  /addtax system rate           tax % for a system's transactions
+  /dtax                         distribute the tax pool now
+  /taxinfo                      all tax rates + pool
+  /banksettings                 view bank settings
+
+Loans
+  /setloan field value          loan config
+  /loanstats                    loan statistics
+  /loanuser USER                a user's loans
+
+Stock Market
+  /addstock SYMBOL name price volatility   list a stock
+  /rmstock SYMBOL               delist a stock
+
+Asset Market
+  /addasset SYMBOL name CATEGORY price volatility   list an asset
+  /editasset SYMBOL field value        edit asset fields
+  /assetset SYMBOL field value         asset config
+  /assetprice SYMBOL price             manual price set
+  /assetvolatility SYMBOL v            volatility set
+  /rmasset SYMBOL                     delist
+  /restoreasset SYMBOL                relist
+  /assetinfo SYMBOL                   asset details
+  /assetlist [page]                   list assets
+  /assetsearch query                  search assets
+  /assetowners SYMBOL [page]          top holders
+  /assetadminstats                    market admin stats
+  /listinginfo LISTING_ID             listing details
+  /forcelisting LISTING_ID            force-cancel any listing
+
+Promo Codes
+  /addpromo CODE EXPIRY LIMIT REWARD [REWARD...]  create
+  /rmpromo CODE                     disable (history kept)
+  /editpromo CODE FIELD VALUE [VALUE...]   expiry|limit|active|reward
+  /promoinfo CODE                   promo details
+  /promolist [status] [page]        list promos
+  /promostats CODE                  redemption statistics
+  Rewards: rs:AMOUNT, stock:SYMBOL:QTY, asset:ASSET_ID:QTY.
+  Expiry: lifetime or a number + min/hr/day/week/month/year.
+
+Games
+  /flyset low|medium|high field value    fly tuning
+  /flytrap difficulty 8 values           fly bulk set
+  /betset win_prob multiplier min_bet max_bet [cooldown]
+  /minestrap ...                         mines tuning
+  /robset field value                    rob tuning
+
+Emoji Games
+  /emojiset GAME field value       one field at a time
+  /emojitrap GAME key=value ...    bulk set
+  /emojigameinfo GAME              current config
+  /emojigames                      overview of all emoji games
+  /bjset field value               blackjack config
+  /bjinfo                          blackjack config
+  Fields: cooldown, min_bet, max_bet, multiplier, rule, target,
+  single, duel, enabled, expiry.
+
+Users
+  /freeze @user                    freeze a user
+  /unfreeze @user                  unfreeze a user
+  /ban @user                       ban a user
+  /unban @user                     unban a user
+  /userinfo @user                  user details
+  /setchat [chat_id] [setting] [on|off]    group config
+
+Broadcast (reply to a message)
+  /bgc                             broadcast to all registered groups
+  /bdm                             broadcast to all users via DM
+
+System
+  /adminhelp                       this help
+  /econstats                       economy statistics
+  /restart                         restart the bot process
+
+OWNER + SUDO COMMANDS
+=====================
+  /data USER                       full activity report (ID / @username / UID / reply)
+  /dumps                           list security dumps
+  /dumpinfo ID                     dump details
+  /gban @user                      global ban
+  /ungban @user                    remove global ban
+
+OWNER ONLY COMMANDS
+===================
+  /addsudo @user                   add sudo admin
+  /rsudo @user                     remove sudo admin
+  /clear USER                      backup + reset economy, returns recovery ID
+  /recover ID                      restore economy from a dump
+  /restore                         restore operations
+  /restorecase                     restore operations (case recovery)
+  /securityset field value         security config
