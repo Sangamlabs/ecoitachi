@@ -28,7 +28,10 @@ async def cmd_gban(client: Client, message: Message):
     """
     target = await _resolve_target(message)
     if target is None:
-        await reply_html(client, message, msgs.error("User not found. They must start the bot."))
+        await reply_html(
+            client, message,
+            msgs.error("User not found. Provide a Telegram ID, @username, or reply to the user."),
+        )
         return
     
     # Owner immunity check

@@ -29,7 +29,9 @@ def categories() -> list[str]:
 
 
 async def net_worth(user: dict[str, Any]) -> int:
-    """Wallet + Bank + live stock value + live asset value."""
+    """Wallet + Bank + live stock value + live asset value − loan debt."""
+    from database import loans as loans_db
+
     live_stocks = 0
     holdings = await stocks_db.get_user_holdings(user["user_id"])
     for h in holdings:
@@ -39,11 +41,13 @@ async def net_worth(user: dict[str, Any]) -> int:
     from services import assets as asset_service
 
     live_assets = await asset_service.live_asset_value(user["user_id"])
+    debt = await loans_db.get_outstanding(user["user_id"])
     return (
         int(user.get("wallet", 0))
         + int(user.get("bank", 0))
         + live_stocks
         + live_assets
+        - debt
     )
 
 

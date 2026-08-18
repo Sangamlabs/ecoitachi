@@ -150,6 +150,14 @@ DEFAULTS: dict[str, Any] = {
         "global_ban_on_exploit": False,
         "secret_detection_enabled": False,
     },
+    "loan": {
+        "enabled": True,
+        "max_principal": 100_000,
+        "min_duration_days": 1,
+        "max_duration_days": 7,
+        "interest_rate": 1.0,
+        "recovery_percent": 100,
+    },
 }
 
 
@@ -341,6 +349,22 @@ async def update_security_config(**changes: Any) -> dict[str, Any]:
     current.update({k: v for k, v in changes.items() if k in DEFAULTS["security"]})
     await mongo.db[COLLECTION].update_one(
         {"key": "global"}, {"$set": {"security": current}}, upsert=True
+    )
+    return current
+
+
+async def get_loan_config() -> dict[str, Any]:
+    """Return the loan configuration merged over defaults."""
+    settings = await get_settings()
+    return dict(settings.get("loan", DEFAULTS["loan"]))
+
+
+async def update_loan_config(**changes: Any) -> dict[str, Any]:
+    """Overwrite one or more loan configuration values."""
+    current = await get_loan_config()
+    current.update({k: v for k, v in changes.items() if k in DEFAULTS["loan"]})
+    await mongo.db[COLLECTION].update_one(
+        {"key": "global"}, {"$set": {"loan": current}}, upsert=True
     )
     return current
 

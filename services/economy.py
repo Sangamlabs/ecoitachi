@@ -46,7 +46,7 @@ class BannedUser(EconomyError):
 async def _require_user(user_id: int) -> dict[str, Any]:
     user = await users_db.get_user(user_id)
     if user is None:
-        raise UserNotFound("User not registered. Ask them to start the bot.")
+        raise UserNotFound("User not registered. Send /start to the bot to register.")
     if user.get("is_banned"):
         raise BannedUser("This user is banned from the economy.")
     return user
@@ -60,12 +60,18 @@ async def ensure_active(user: dict[str, Any]) -> None:
 
 
 async def get_balance(user_id: int) -> dict[str, int]:
-    """Return wallet / bank / net worth for a user (creating if needed)."""
+    """Return wallet / bank / net worth for a user (creating if needed).
+
+    ``net_worth`` is net of any active loan debt (a loan is a liability).
+    """
+    from database import loans as loans_db
+
     user = await users_db.get_or_create_user(user_id)
+    debt = await loans_db.get_outstanding(user_id)
     return {
         "wallet": user.get("wallet", 0),
         "bank": user.get("bank", 0),
-        "net_worth": user.get("wallet", 0) + user.get("bank", 0),
+        "net_worth": user.get("wallet", 0) + user.get("bank", 0) - debt,
     }
 
 
@@ -228,7 +234,7 @@ async def set_user_balance(user_id: int, field: str, value: int) -> None:
     if value < 0:
         raise MoneyError("Balance cannot be negative.")
     if await users_db.get_user(user_id) is None:
-        raise UserNotFound("User not registered. Ask them to start the bot.")
+        raise UserNotFound("User not registered. Send /start to the bot to register.")
     await users_db.set_user_field(user_id, field, value)
 
 

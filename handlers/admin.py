@@ -6,12 +6,17 @@ Every admin money action produces an audit transaction.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
+import sys
 import uuid
+from pathlib import Path
 
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
+from config import config
 from database import security as sec_db, users as users_db, admins as admins_db
 from database import stocks as stocks_db
 from database.mongo import mongo
@@ -51,6 +56,39 @@ from utils.validators import (
 logger = logging.getLogger(__name__)
 
 NOT_CHANNEL = ~filters.channel & ~filters.bot
+
+PM2_BIN = "/usr/bin/pm2"
+
+
+async def _restart_bot() -> None:
+    """Fully restart the bot, reloading every module.
+
+    Primary path: ask pm2 to restart this app (kills this process, pm2 boots a
+    fresh one).  Fallback for non-pm2 runs: re-exec ``bot.py`` in place so all
+    modules are imported again.  The admin is notified after startup in
+    ``bot.py``.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            PM2_BIN, "restart", config.PM2_APP_NAME,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        rc = await proc.wait()
+        if rc == 0:
+            # pm2 will SIGINT this process; force-exit as a safety net.
+            await asyncio.sleep(2)
+            os._exit(0)
+        logger.warning("pm2 restart returned code %s; falling back to exec", rc)
+    except Exception as exc:
+        logger.exception("pm2 restart failed (%s); falling back to exec", exc)
+
+    try:
+        bot_path = str(Path(__file__).resolve().parent.parent / "bot.py")
+        os.execv(sys.executable, [sys.executable, bot_path])
+    except Exception as exc:
+        logger.exception("self-restart exec failed: %s", exc)
+        os._exit(1)
 
 FLY_FIELDS = {
     "min_mult": "minimum_multiplier",
@@ -803,6 +841,18 @@ def register(app: Client) -> None:
             "stocks": len(await stocks_db.list_active_assets()),
         }
         await reply_html(client, message, msgs.admin_stats(stats))
+
+    # ---------------- /restart - full bot restart (bot admin + owner) ----------------
+    @app.on_message(filters.command("restart") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler
+    async def cmd_restart(client: Client, message: Message):
+        """/restart — fully restart the bot and reload all modules (BOT ADMIN + OWNER, in groups and DMs)."""
+        await reply_html(
+            client, message,
+            msgs.info("🔄 Restarting the bot... all modules will be reloaded. You will be notified when it is back online."),
+        )
+        asyncio.get_running_loop().create_task(_restart_bot())
 
     # ---------------- SECURITY COMMANDS ----------------
     # /gban - Global ban (owner + sudo)

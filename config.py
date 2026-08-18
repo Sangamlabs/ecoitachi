@@ -39,6 +39,10 @@ class Config:
     STOCK_UPDATE_INTERVAL_MINUTES: int = int(
         os.getenv("STOCK_UPDATE_INTERVAL_MINUTES", "2")
     )
+    LOAN_MAINTENANCE_INTERVAL_MINUTES: int = int(
+        os.getenv("LOAN_MAINTENANCE_INTERVAL_MINUTES", "5")
+    )
+    PM2_APP_NAME: str = os.getenv("PM2_APP_NAME", "testeco")
     LOG_DIR: Path = BASE_DIR / "logs"
 
     def validate(self) -> None:

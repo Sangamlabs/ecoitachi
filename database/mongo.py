@@ -47,6 +47,7 @@ class Mongo:
             bank,
             emoji_games,
             games,
+            loans,
             promos,
             stocks,
             transactions,
@@ -63,7 +64,12 @@ class Mongo:
         await games.ensure_indexes()
         await emoji_games.ensure_indexes()
         await bank.ensure_indexes()
+        await loans.ensure_indexes()
         await promos.ensure_indexes()
+
+        from services import broadcast as broadcast_service
+
+        await broadcast_service.ensure_indexes()
 
 
 mongo = Mongo()

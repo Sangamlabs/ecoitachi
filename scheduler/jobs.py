@@ -65,6 +65,22 @@ async def _run_emoji_expiry() -> None:
         logger.exception("emoji duel expiry job failed")
 
 
+async def _run_loan_maintenance() -> None:
+    from services import loan as loan_service
+
+    try:
+        summary = await loan_service.run_loan_maintenance()
+        if summary["marked_overdue"] or summary["interest_charged"]:
+            logger.info(
+                "loan maintenance: scanned=%d overdue=%d interest=%d",
+                summary["scanned"],
+                summary["marked_overdue"],
+                summary["interest_charged"],
+            )
+    except Exception:
+        logger.exception("loan maintenance job failed")
+
+
 async def _run_promo_expiry() -> None:
     from services import promos as promo_service
 
@@ -132,6 +148,14 @@ def build_scheduler() -> AsyncIOScheduler:
         IntervalTrigger(minutes=1),
         id="promo_expiry",
         name="expire overdue promos and refresh promo cache",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _run_loan_maintenance,
+        IntervalTrigger(minutes=max(1, config.LOAN_MAINTENANCE_INTERVAL_MINUTES)),
+        id="loan_maintenance",
+        name="mark overdue loans and accrue interest",
         max_instances=1,
         coalesce=True,
     )

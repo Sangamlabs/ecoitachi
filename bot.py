@@ -15,6 +15,7 @@ from config import config
 from database.mongo import mongo
 from logging_setup import get_logger, setup_logging
 from scheduler.jobs import build_scheduler, job_summary
+from utils.sender import notify_owner
 
 logger = get_logger("bot")
 
@@ -33,6 +34,9 @@ COMMAND_REGISTRY = [
     "handlers.emoji_admin",
     "handlers.rewards",
     "handlers.admin",
+    "handlers.loan",
+    "handlers.loan_admin",
+    "handlers.broadcast",
     "handlers.promo_admin",
     "handlers.promo_detect",
     "handlers.security"
@@ -82,6 +86,18 @@ async def main() -> None:
         logger.info("bot started as @%s", (await app.get_me()).username)
         scheduler.start()
         logger.info(job_summary(scheduler))
+
+        # Notify the admin that the bot is back online.  Sent from a background
+        # task after a short delay so the session/connection has settled.
+        async def _notify_alive() -> None:
+            await asyncio.sleep(3)
+            await notify_owner(
+                app,
+                "✅ <b>UNOITACHI Bot</b> is alive and running.",
+            )
+
+        asyncio.create_task(_notify_alive())
+
         await asyncio.Event().wait()
     except KeyboardInterrupt:
         logger.info("shutting down...")
