@@ -83,7 +83,9 @@ async def main() -> None:
 
     try:
         await app.start()
-        logger.info("bot started as @%s", (await app.get_me()).username)
+        me = await app.get_me()
+        config.BOT_ID = int(me.id)
+        logger.info("bot started as @%s (id=%s)", me.username, config.BOT_ID)
         scheduler.start()
         logger.info(job_summary(scheduler))
 

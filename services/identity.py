@@ -28,16 +28,23 @@ async def ensure_user(
     username: str | None = None,
     first_name: str | None = None,
     *,
+    is_bot: bool | None = None,
     touch: bool = True,
 ) -> dict[str, Any]:
     """Register (or touch) a UNOITACHI user and return the stored document.
+
+    ``is_bot`` is the authoritative Telegram flag (from a real ``User``
+    object); when provided it is persisted so the economy service can reject
+    bot recipients.  ``None`` leaves the stored value untouched.
 
     Race-safe: ``get_or_create_user`` upserts atomically on the unique
     ``user_id`` index and a permanent ``unique_user_id`` is attached with a
     guarded update, so two simultaneous messages from a new user can never
     create two users or assign two UIDs.
     """
-    doc = await users_db.get_or_create_user(user_id, username, first_name)
+    doc = await users_db.get_or_create_user(user_id, username, first_name, is_bot=bool(is_bot))
+    if is_bot is not None and bool(doc.get("is_bot")) != bool(is_bot):
+        await users_db.set_user_field(user_id, "is_bot", bool(is_bot))
     if not doc.get("unique_user_id"):
         await users_db.assign_uid(user_id)
     if touch:
@@ -53,6 +60,7 @@ async def ensure_user_from_telegram(user: Any) -> dict[str, Any] | None:
         user.id,
         getattr(user, "username", None),
         getattr(user, "first_name", None),
+        is_bot=bool(getattr(user, "is_bot", False)),
     )
 
 

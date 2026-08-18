@@ -64,8 +64,15 @@ def register(app: Client) -> None:
         args = message.command[1:]
 
         # Target priority: reply user id > explicit id / @username / UID.
-        target_id = target_from_message(message)
+        # A reply carries the real Telegram User object, so register the
+        # receiver through it (persists the authoritative ``is_bot`` flag).
+        reply_user = getattr(getattr(message, "reply_to_message", None), "from_user", None)
+        target_id = None
         amount_idx = 0
+        if reply_user is not None:
+            reply_doc = await identity_service.ensure_user_from_telegram(reply_user)
+            if reply_doc is not None:
+                target_id = reply_doc["user_id"]
         if target_id is None and args:
             parsed = parse_target_arg(args[0])
             if parsed is not None:
@@ -162,7 +169,13 @@ def register(app: Client) -> None:
         args = message.command[1:]
 
         # Target priority: reply user id > explicit id / @username / UID.
-        target_id = target_from_message(message)
+        # Reply carries the real Telegram User object (authoritative is_bot).
+        reply_user = getattr(getattr(message, "reply_to_message", None), "from_user", None)
+        target_id = None
+        if reply_user is not None:
+            reply_doc = await identity_service.ensure_user_from_telegram(reply_user)
+            if reply_doc is not None:
+                target_id = reply_doc["user_id"]
         if target_id is None and args:
             parsed = parse_target_arg(args[0])
             if parsed is not None:

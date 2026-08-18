@@ -172,11 +172,14 @@ def profile(user: dict[str, Any]) -> str:
 
 
 def payment(sender: dict[str, Any], receiver: dict[str, Any], amount: int, tx_id: str) -> str:
+    uid = receiver.get("unique_user_id")
+    uid_line = f"🪪 Recipient UID: <code>{uid}</code>\n" if uid else ""
     return (
         f"<b>✅ PAYMENT SENT</b>\n"
         f"<blockquote>"
         f"👤 To: {_link(receiver['user_id'], _user_name(receiver))}\n"
         f"💵 Amount: <b>{format_money(amount)}</b>\n"
+        f"{uid_line}"
         f"🧾 <code>#{tx_id}</code>"
         f"</blockquote>"
     )

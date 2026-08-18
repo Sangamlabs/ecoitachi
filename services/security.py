@@ -294,7 +294,8 @@ async def manual_clear(operator_id: int, target_user_id: Optional[int] = None) -
         1. snapshot the user's economy,
         2. create a recovery dump + generate a recovery ID (dump_id),
         3. record an audit event,
-        4. reset the economy wallet to the configured recovery balance,
+        4. reset the economy wallet to the project's fresh-account balance
+           (``starting_balance``), never to a security/recovery sentinel,
         5. persist recovery state in the security/recovery database layer,
         6. return ``(ok, message, recovery_id)``.
 
@@ -304,7 +305,7 @@ async def manual_clear(operator_id: int, target_user_id: Optional[int] = None) -
     if target_user_id is None:
         target_user_id = operator_id
 
-    clear_balance = await settings_service.get_clear_recovery_balance()
+    reset_wallet = await settings_service.get_starting_balance()
 
     # 1 + 2. Snapshot + dump (generates the recovery ID).
     dump = await manual_dump_user(
@@ -319,21 +320,21 @@ async def manual_clear(operator_id: int, target_user_id: Optional[int] = None) -
         event_type="recovery_clear_initiated",
         user_id=target_user_id,
         actor_id=operator_id,
-        details={"dump_id": recovery_id, "action": "/clear", "clear_balance": clear_balance},
+        details={"dump_id": recovery_id, "action": "/clear", "reset_wallet": reset_wallet},
     )
 
     # 4. Reset the economy wallet through the Economy Service.
     from services import economy as econ
 
     if await users_db.user_exists(target_user_id):
-        await econ.set_user_balance(target_user_id, "wallet", clear_balance)
+        await econ.set_user_balance(target_user_id, "wallet", reset_wallet)
         ok = True
     else:
         ok = False
 
     # 5. Persist recovery state in the security/recovery DB layer.
     await sec_db.reset_recovery_balance(
-        target_user_id, clear_balance, dump_id=recovery_id, operator_id=operator_id
+        target_user_id, reset_wallet, dump_id=recovery_id, operator_id=operator_id
     )
 
     # 3 (continued). Audit — clear completed.
@@ -342,7 +343,7 @@ async def manual_clear(operator_id: int, target_user_id: Optional[int] = None) -
         event_type="recovery_balance_cleared",
         user_id=target_user_id,
         actor_id=operator_id,
-        details={"dump_id": recovery_id, "cleared_balance": clear_balance, "action": "/clear"},
+        details={"dump_id": recovery_id, "reset_wallet": reset_wallet, "action": "/clear"},
     )
 
     if ok:
@@ -350,7 +351,7 @@ async def manual_clear(operator_id: int, target_user_id: Optional[int] = None) -
             True,
             f"User <code>{target_user_id}</code> cleared.\n"
             f"Recovery ID: <code>{recovery_id}</code> (use <code>/recover {recovery_id}</code> to restore).\n"
-            f"Wallet reset to {clear_balance}.",
+            f"Wallet reset to {reset_wallet}.",
             recovery_id,
         )
     return False, f"User <code>{target_user_id}</code> not found.", None

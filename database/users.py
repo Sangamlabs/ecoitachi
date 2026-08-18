@@ -40,6 +40,7 @@ ZERO_USER = {
     "monthly_rank": None,
     "is_banned": False,
     "is_frozen": False,
+    "is_bot": False,
     "last_interest_at": None,
 }
 
@@ -126,6 +127,7 @@ async def get_or_create_user(
     user_id: int,
     username: str | None = None,
     first_name: str | None = None,
+    is_bot: bool = False,
 ) -> dict[str, Any]:
     """Return the user document, creating it with the starting balance if new.
 
@@ -143,6 +145,7 @@ async def get_or_create_user(
             "$setOnInsert": {
                 **ZERO_USER,
                 "wallet": starting_balance,
+                "is_bot": is_bot,
                 "user_id": user_id,
                 "username": _normalize_username(username),
                 "first_name": first_name,

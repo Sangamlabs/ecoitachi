@@ -12,6 +12,7 @@ from typing import Any
 
 from database import users as users_db
 from database.mongo import mongo
+from config import config
 from utils.money import MoneyError, format_money, percentage
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,30 @@ async def remove_wallet(
     return {"wallet": result.get("wallet", 0), "bank": result.get("bank", 0)}
 
 
+async def validate_transfer_target(
+    sender_id: int,
+    receiver_id: int,
+    receiver_doc: dict[str, Any] | None = None,
+) -> None:
+    """Centralized bot/self target guard for every user-to-user value move.
+
+    Rejects:
+      - self-transfer (sender == receiver),
+      - transfers to the current bot itself (``config.BOT_ID``),
+      - transfers to any Telegram bot account (``receiver_doc.is_bot``).
+
+    Must run BEFORE any balance/asset mutation so a rejected transfer can
+    never lose value.  When ``config.BOT_ID`` is 0 (bot not started / tests)
+    the current-bot check is skipped.
+    """
+    if sender_id == receiver_id:
+        raise EconomyError("❌ You cannot transfer coins/assets/stocks to yourself.")
+    if config.BOT_ID and receiver_id == config.BOT_ID:
+        raise EconomyError("❌ The bot cannot receive user economy transfers.")
+    if receiver_doc is not None and receiver_doc.get("is_bot"):
+        raise EconomyError("❌ You cannot transfer coins/assets/stocks to a bot account.")
+
+
 async def transfer(
     sender_id: int,
     receiver_id: int,
@@ -137,8 +162,6 @@ async def transfer(
 
     Returns metadata: ``{sender, receiver, amount, tax, ...}``.
     """
-    if sender_id == receiver_id:
-        raise EconomyError("You cannot pay yourself.")
     if amount <= 0:
         raise MoneyError("Amount must be positive.")
     if tax < 0:
@@ -148,6 +171,8 @@ async def transfer(
     receiver = await _require_user(receiver_id)
     await ensure_active(sender)
     await ensure_active(receiver)
+    # Centralized bot/self guard — before any mutation.
+    await validate_transfer_target(sender_id, receiver_id, receiver)
 
     result = await mongo_db_update_guarded(sender_id, total, {"wallet": -total, "total_spent": total})
     if result is None:

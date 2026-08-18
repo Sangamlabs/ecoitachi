@@ -59,9 +59,9 @@ def _patch_db(monkeypatch, *, existing=None, users_by_username=None):
     """Monkeypatch users_db so identity.resolve_user needs no MongoDB."""
     calls = {"created": [], "touched": []}
 
-    async def fake_get_or_create(user_id, username=None, first_name=None):
+    async def fake_get_or_create(user_id, username=None, first_name=None, is_bot=False):
         calls["created"].append(user_id)
-        return {"user_id": user_id, "unique_user_id": f"UID-{user_id:06d}"}
+        return {"user_id": user_id, "unique_user_id": f"UID-{user_id:06d}", "is_bot": is_bot}
 
     async def fake_touch(user_id, username=None, first_name=None):
         calls["touched"].append(user_id)

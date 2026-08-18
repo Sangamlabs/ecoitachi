@@ -49,6 +49,10 @@ async def attempt(robber_id: int, target_id: int) -> dict[str, Any]:
     robber = await economy._require_user(robber_id)
     await ensure_active(robber)
     target = await economy._require_user(target_id)
+    # Centralized bot/self guard — a bot (or the bot itself) can never be a
+    # robbery target.  Self is already rejected above with a rob-specific
+    # message; this blocks the bot cases before any mutation.
+    await economy.validate_transfer_target(robber_id, target_id, target)
 
     bank_before = int(target.get("bank", 0))
     if bank_before <= 0:

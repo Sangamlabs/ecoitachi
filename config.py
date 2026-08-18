@@ -29,6 +29,8 @@ class Config:
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     MONGO_DB_NAME: str = os.getenv("MONGO_DB_NAME", "unoitachi_bot")
     OWNER_ID: int = int(os.getenv("OWNER_ID", "0"))
+    # Set at startup from ``app.get_me().id``; 0 until the bot has started.
+    BOT_ID: int = 0
     CATBOX_ENABLED: bool = _get_bool("CATBOX_ENABLED", False)
     CATBOX_API_URL: str = os.getenv(
         "CATBOX_API_URL", "https://catbox.moe/user/api.php"
