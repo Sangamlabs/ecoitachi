@@ -1,27 +1,42 @@
 UNOITACHI — COMPLETE COMMAND LIST
 =================================
-Generated from the live handler registry (109 commands).
+Generated from the live handler registry (128 commands).
 Targets in square brackets accept Telegram ID, @username, UNOITACHI UID, or replying to a user.
+Full reference with defaults: docs/COMMANDS.txt
 
-USER COMMANDS
-=============
+USER COMMANDS (57)
+==================
+Basics
+  /start                welcome message (private chat only)
+  /help                 short summary of user commands (private chat only)
+
 Economy
   /profile              your profile
-  /bal                  check balance
-  /pay @user amount     send money
-  /leader               leaderboard
+  /bal [@user | user_id]  check balance
+  /pay @user amount     send money (also /pay user_id, /pay UID-xxxxxx, reply + /pay amount)
+  /leader               net-worth leaderboard
   /topbank              top bank deposits
   /transactions         last 10 transfers (sent & received)
 
 Bank
+  /bank                 bank info & interest
   /deposit amount       wallet -> bank
   /withdraw amount      bank -> wallet (tax applies)
-  /bank                 bank info & interest
 
 Loans
   /loan DAYS AMOUNT     borrow money
-  /loanpay [amount]     repay a loan
-  /loaninfo             loan rules & rates
+  /loaninfo             loan status & rules
+  /loanpay AMOUNT|all   repay a loan
+
+Free Rewards
+  /daily                free money (default ₹500, 24h)
+  /weekly               free money (default ₹3,000, 7 days)
+  /monthly              free money (default ₹12,000, 30 days)
+
+Daily Income
+  /interestbank         claim daily bank income
+  /interestasset        claim daily asset income
+  /stockinterest        claim daily stock income
 
 Stock Market
   /stocklist            market overview
@@ -31,7 +46,7 @@ Stock Market
   /portfolio            your holdings
 
 Asset Market
-  /assets               asset market overview
+  /assets [page]        asset market overview
   /asset SYMBOL         asset details
   /assetsinfo [SYMBOL]  market stats / buy-decision info
   /assetstats           market statistics
@@ -41,35 +56,39 @@ Asset Market
 
 Resale Market
   /listasset SYMBOL qty price   list your asset for sale
-  /listings                    browse user listings
+  /listings [SYMBOL] [page]     browse user listings
   /buylisting ID               buy a listing
   /mylistings                  your listings
-  /cancellisting ID            remove your own listing
-  /rmlisting ID                remove your own listing (alias)
+  /cancellisting ID            cancel your listing
+  /rmlisting ID                remove your own listing
 
 Games
-  /fly low|medium|high amount  fly game
-  /mines amount                6x6 mines board
-  /bet amount                  coin bet
-  /blackjack amount            play the dealer
-  /rob @user                   steal from a user's bank
-  /join CODE                   join a duel with its 4-digit code
+  /fly low|medium|high amount   fly game
+  /mines amount                 6x6 mines board (inline buttons)
+  /bet amount                   coin bet
+  /blackjack amount             play the dealer
+  /rob @user                    steal from a user's bank
 
-System
-  /start                welcome message
-  /help                 this help
+Emoji Games (Telegram animated dice)
+  /sball /sarrow /sbasketball /sfootball /sslot /sdice   solo rounds
+  /ball /arrow /basketball /football /slot /dice         duels (creates lobby)
+  /join CODE                    join a duel with its 4-digit code
 
+Promo Codes
+  (auto)                        typing a valid, active code as a normal message
+                                detects and redeems it automatically
+  /redeem CODE                  redeem a code explicitly (same engine)
 
-ADMIN COMMANDS (owner + sudo)
-=============================
+ADMIN COMMANDS (owner + sudo, 59)
+=================================
 Economy
   /give @user amount            give money
   /remove @user amount          take money
   /getcoin amount               credit yourself coins
   /track TX_ID                  full transaction detail
 
-Bank
-  /setinterest rate             interest % per 24h
+Bank & Tax
+  /setinterest rate             bank interest % per 24h
   /setincome bank|asset|stock rate   daily income % per 24h
   /setreward daily|weekly|monthly amount
   /settax rate                  withdrawal tax %
@@ -79,16 +98,16 @@ Bank
   /banksettings                 view bank settings
 
 Loans
-  /setloan field value          loan config
+  /setloan KEY VALUE            loan config (max|interest|mindays|maxdays|recovery|enabled)
   /loanstats                    loan statistics
   /loanuser USER                a user's loans
 
 Stock Market
-  /addstock SYMBOL name price volatility   list a stock
+  /addstock SYMBOL name base_price volatility   list a stock
   /rmstock SYMBOL               delist a stock
 
 Asset Market
-  /addasset SYMBOL name CATEGORY price volatility   list an asset
+  /addasset SYMBOL name CATEGORY base_price volatility   list an asset
   /editasset SYMBOL field value        edit asset fields
   /assetset SYMBOL field value         asset config
   /assetprice SYMBOL price             manual price set
@@ -147,20 +166,20 @@ System
   /econstats                       economy statistics
   /restart                         restart the bot process
 
-OWNER + SUDO COMMANDS
-=====================
+OWNER + SUDO COMMANDS (5)
+=========================
   /data USER                       full activity report (ID / @username / UID / reply)
-  /dumps                           list security dumps
-  /dumpinfo ID                     dump details
-  /gban @user                      global ban
+  /dumps                           list all security dumps
+  /dumpinfo                        list recent security dumps (up to 10)
+  /gban @user                      global ban (optional reason)
   /ungban @user                    remove global ban
 
-OWNER ONLY COMMANDS
-===================
+OWNER ONLY COMMANDS (7)
+=======================
   /addsudo @user                   add sudo admin
   /rsudo @user                     remove sudo admin
   /clear USER                      backup + reset economy, returns recovery ID
-  /recover ID                      restore economy from a dump
-  /restore                         restore operations
-  /restorecase                     restore operations (case recovery)
-  /securityset field value         security config
+  /restore DUMP-ID                 restore economy from a dump
+  /recover DUMP-ID                 recover economy from a dump
+  /restorecase CASE-ID             restore from a recoverable security case
+  /securityset                     view security config

@@ -11,13 +11,18 @@ GENERAL NOTES
 - Every user is auto-created on first interaction. New users receive a
   welcome grant of ₹500 (50,000 units) in their wallet (admin-configurable).
 - Most commands work in private chats, groups AND supergroups. Channels and
-  bots are ignored.
-- Reply-based target resolution: replying to a user's message is the most
-  reliable way to target them; otherwise you can pass @username or a numeric
-  Telegram user id.
+  bots are ignored. /start and /help are private-chat only.
+- Target resolution (for any @user / user argument, everywhere in the bot):
+      reply-to message  >  numeric Telegram user id  >  UNOITACHI UID
+      (UID-xxxxxx)  >  @username.
+  Unknown users are auto-registered when targeted — a user does NOT need to
+  have started the bot first.
 - All money movements produce an audit transaction with a unique #txid.
   /transactions only shows your last 10 transfer (PAY) logs; other types
   are still recorded in the database.
+- Every /pay and /rob target is protected by a centralized guard: you can
+  never send money to yourself, to the bot itself, or to any Telegram bot
+  account.
 
 PERMISSIONS
 --------------------------------------------------------------------------------
@@ -25,7 +30,13 @@ Two ranks control the bot:
   1. OWNER      — the numeric OWNER_ID set in .env. Full access to everything,
                   and bypasses per-group "admin commands off" restrictions.
   2. SUDO ADMIN — users added by the owner with /addsudo. Access to all admin
-                  commands except /addsudo and /rsudo.
+                  commands except the owner-only ones below.
+
+Permission split on admin commands:
+  SUDO + OWNER : everything marked (owner + sudo) and every plain admin
+                 command in this reference.
+  OWNER ONLY   : /addsudo /rsudo /clear /restore /recover /restorecase
+                 /securityset.
 
 Permissions are ALWAYS resolved from numeric Telegram user ids, never
 usernames, so a username change cannot grant or revoke access.
@@ -43,7 +54,7 @@ BASICS
     welcome balance). Private chat only.
 
 /help
-    Shows a short summary of user commands.
+    Shows a short summary of user commands. Private chat only.
 
 ECONOMY
 --------------------------------------------------------------------------------
@@ -57,11 +68,12 @@ ECONOMY
     Example:  /bal
               /bal @someone          /bal 123456789
 
-/pay @user amount | /pay user_id amount | reply to a user + /pay amount
+/pay @user amount | /pay user_id amount | /pay UID-xxxxxx amount | reply + /pay amount
     Send money from YOUR WALLET to another user's wallet. Amount must be > 0
     and you must have enough in your wallet. Target priority is:
-        reply-to user id  >  explicit numeric id  >  username lookup.
+        reply-to user id  >  explicit numeric id  >  UID  >  @username lookup.
     The receiver gets a private notification. Logs PAY transaction.
+    You cannot pay yourself, the bot, or any other bot account.
     Example:  /pay @sangam 5000          (₹50.00)
               /pay 123456789 5000
               (reply to a message) /pay 5000
@@ -71,6 +83,52 @@ ECONOMY
 
 /topbank
     Top-10 bank balance leaderboard (highest bank deposits only).
+
+/transactions
+    Your last 10 TRANSFER logs — money sent to you or sent by you.
+    Sent transfers show "PAY →", received transfers show "PAY ←" with the
+    txid. All other types (deposits, game wins, rewards, ...) are not shown
+    here. Example:
+        PAY SENT → ₹20.00 · #a1b2c3d4e5
+        PAY RECEIVED ← ₹5.00 · #f6e7d8c9b0
+
+BANK
+--------------------------------------------------------------------------------
+/bank
+    Bank overview: your bank balance, wallet, interest rate, withdrawal tax,
+    and the size of the tax pool.
+
+/deposit amount
+    Move money wallet -> bank. Earns interest. Bank balance cannot be spent
+    on games/payments until withdrawn. Example: /deposit 10000 (₹100.00)
+
+/withdraw amount
+    Move money bank -> wallet. A withdrawal tax (default 5%) is charged and
+    goes into the tax pool, which is redistributed monthly to the Top-10
+    earners. Example: /withdraw 10000
+
+LOANS
+--------------------------------------------------------------------------------
+/loan DAYS AMOUNT
+    Borrow money from the bank. The amount is credited to your WALLET
+    immediately (borrowed money is a liability, not counted as earned
+    income). One active loan per user at a time.
+    Limits (admin-configurable via /setloan):
+        duration  : 1 to 7 days            (default)
+        principal : up to ₹1,000           (default max principal)
+        interest  : 1% per OVERDUE day     (default overdue interest)
+    Example: /loan 7 50000   (₹500 for 7 days)
+
+/loaninfo
+    Your active loan status: loan id, principal, outstanding, overdue
+    interest rate, total repaid, issued/due dates, status, days overdue.
+    Shows a message when you have no active loan.
+
+/loanpay AMOUNT | /loanpay all
+    Pay toward your active loan from your wallet. "all" pays the full
+    outstanding balance. If overdue interest accrues concurrently the
+    overpayment is refunded to your wallet.
+    Example: /loanpay all
 
 FREE REWARDS
 --------------------------------------------------------------------------------
@@ -101,30 +159,7 @@ DAILY INCOME
         /interestasset  -> claims N days of asset income in one go
         /stockinterest  -> claims N days of stock income in one go
 
-BANK
---------------------------------------------------------------------------------
-/bank
-    Bank overview: your bank balance, wallet, interest rate, withdrawal tax,
-    and the size of the tax pool.
-
-/deposit amount
-    Move money wallet -> bank. Earns interest. Bank balance cannot be spent
-    on games/payments until withdrawn. Example: /deposit 10000 (₹100.00)
-
-/withdraw amount
-    Move money bank -> wallet. A withdrawal tax (default 5%) is charged and
-    goes into the tax pool, which is redistributed monthly to the Top-10
-    earners. Example: /withdraw 10000
-
-/transactions
-    Your last 10 TRANSFER logs — money sent to you or sent by you.
-    Sent transfers show "PAY →", received transfers show "PAY ←" with the
-    txid. All other types (deposits, game wins, rewards, ...) are not shown
-    here. Example:
-        PAY SENT → ₹20.00 · #a1b2c3d4e5
-        PAY RECEIVED ← ₹5.00 · #f6e7d8c9b0
-
-MARKET (stocks)
+STOCK MARKET
 --------------------------------------------------------------------------------
 Assets (with volatility): BTC Bitcoin, ETH Ethereum, RSX RS Index,
 SOL Solana, DOGE Dogecoin. Prices tick periodically on the configured
@@ -147,8 +182,8 @@ volatility model. You can buy fractional amounts.
 /portfolio
     Your holdings, current value and total profit/loss.
 
-ASSET MARKET (user)
--------------------------------------------------------------------------------
+ASSET MARKET
+--------------------------------------------------------------------------------
 Assets are a SECOND market, fully independent from stocks. Examples included
 on first run: LAPT (Luxury Apartment), M5 (BMW M5), GOLD (Gold Reserve,
 fractional), OIL (Crude Oil, fractional), BOND (Government Bond), DIAMOND
@@ -188,8 +223,8 @@ fractional), OIL (Crude Oil, fractional), BOND (Government Bond), DIAMOND
     Market statistics: total/active assets, total market value, trading
     volume, gainers/losers/flat count.
 
-RESALE MARKET (user) — your own listings
--------------------------------------------------------------------------------
+RESALE MARKET — your own listings
+--------------------------------------------------------------------------------
 You can SELL assets you own to other users at any price you choose. Each
 listing gets its own unique LISTING ID (e.g. LST-1A2B3C4D) — it is never the
 asset's ID. Buyers buy the WHOLE listing (all of its quantity).
@@ -261,21 +296,23 @@ Games / defaults:
     🎲 dice      1-6, WIN when roll == 6 (eq),  multiplier 2.0x
 
 Single-player (bet locked at start, WIN = bet + bet*multiplier, LOSS = 0):
-    /sball amount
-    /sarrow amount
-    /sbasketball amount
-    /sfootball amount
-    /sslot amount
-    /sdice amount
+/sball amount
+/sarrow amount
+/sbasketball amount
+/sfootball amount
+/sslot amount
+/sdice amount
     Example: /sball 500
 
 Duels (1v1, 4-digit Game ID lobby):
-    /ball amount      -> creates a lobby with a 4-digit code
-    /arrow amount
-    /basketball amount
-    /football amount
-    /slot amount
-    /dice amount
+/ball amount
+/arrow amount
+/basketball amount
+/football amount
+/slot amount
+/dice amount
+/join CODE
+    /ball amount      -> creates a lobby with a 4-digit code (same for all duels)
     /join CODE        -> join the lobby; both players' bets are locked
     A SINGLE emoji is rolled. The game's value range is split: upper half wins
     for the creator, lower half for the joiner; the exact middle value draws
@@ -300,7 +337,7 @@ BLACKJACK (USER VS BOT)
 
 CRIME
 --------------------------------------------------------------------------------
-/rob @user | /rob user_id | reply to a user + /rob
+/rob @user | /rob user_id | /rob UID-xxxxxx | reply to a user + /rob
     Try to rob another user's BANK (not wallet). Uses the reply-based target
     resolution. Outcome is random:
         - success: you steal a percentage of the victim's bank, clamped to a
@@ -310,15 +347,32 @@ CRIME
     notification. Robber and victim both get audit transactions (ROB/ROBBED).
     Example:  /rob @sangam
               (reply to a message) /rob
-    You cannot rob yourself, and the victim must have money in their bank.
+    You cannot rob yourself, the bot, or another bot account, and the victim
+    must have money in their bank.
+
+PROMO CODES
+--------------------------------------------------------------------------------
+Promo codes let admins give away currency, stocks and assets. Users redeem a
+promo by simply TYPING the code as a normal text message in DM, groups or
+supergroups. Detection runs automatically; the code must appear as a 3-20
+letter/number token in the message. Only valid, active codes are processed;
+ordinary messages and unknown/inactive codes do nothing. The explicit
+<code>/redeem</code> command is also supported and uses the same engine.
+
+/redeem CODE
+    Explicitly redeem a promo code (same engine as auto-detection). Any user.
+    Only valid, active codes are redeemed; unknown or inactive codes report an
+    error here (and are silently ignored by auto-detection).
 
 --------------------------------------------------------------------------------
 PART 2 — ADMIN COMMANDS (owner + sudo)
 --------------------------------------------------------------------------------
 
-Target resolution (for @user arguments everywhere):
-    reply-to message  >  @username  >  numeric user id.
-The target user must already have started the bot.
+Target resolution (for @user / user arguments everywhere):
+    reply-to message  >  numeric Telegram user id  >  UNOITACHI UID
+    (UID-xxxxxx)  >  @username.
+Unknown users are auto-registered when targeted; they do not need to have
+started the bot first.
 
 PERMISSIONS (owner only — works in DM and groups)
 --------------------------------------------------------------------------------
@@ -340,24 +394,35 @@ HELP
 /adminhelp
     Shows this admin command reference inside Telegram.
 
+USER IDENTITY
+--------------------------------------------------------------------------------
+/data USER | /data UID-xxxxxx | reply to a user + /data
+    Full activity report for one user: identity (id / username / UID), wallet
+    and bank, stock holdings, asset holdings, security cases, security dumps,
+    recovery balance, quarantine status, and the last 8 transactions.
+    Owner + sudo only.
+    Example: /data UID-000042
+             (reply to a user) /data
+
 ECONOMY — MONEY
 --------------------------------------------------------------------------------
-/give @user amount
+/give @user amount | /give user_id amount | reply + /give amount
     Add money to a user's wallet. Amount must be > 0. Counts toward the
     user's total earned and monthly earnings (feeds the monthly ranking).
     Logs ADMIN_GIVE. Example: /give @sangam 50000
 
-/remove @user amount
+/remove @user amount | /remove user_id amount | reply + /remove amount
     Take money from a user's wallet. Uses an atomic balance guard, so it can
     never make a balance negative — fails with "Insufficient balance" if the
     user cannot cover it. Logs ADMIN_REMOVE.
+    Example: /remove @sangam 10000
 
 /getcoin amount
     Admin cheat: instantly credit YOUR OWN wallet with money. Logs an
     ADMIN_GIVE transaction against you.
     Example: /getcoin 100000   (₹1,000.00)
 
-BANK
+BANK & TAX
 --------------------------------------------------------------------------------
 /setinterest rate
     Bank interest percentage paid per 24 hours. Valid 0-100. Default 2%.
@@ -367,16 +432,11 @@ BANK
     Withdrawal tax percentage. Valid 0-100. Default 5%. Tax is collected into
     the pool, not destroyed, and redistributed monthly. Example: /settax 4
 
-/banksettings
-    Show current interest rate, withdrawal tax and tax pool size.
-
-/dtax
-    Manually distribute the CURRENT tax pool to the monthly Top-10 earners
-    using the configured rank percentages. Unlike the automatic month-end
-    job, a manual run does not mark the month as distributed, so the monthly
-    auto-distribution still runs. Every manual run is audited in the
-    tax_distributions collection under its own key.
-    Example: /dtax
+/setincome bank|asset|stock rate
+    Daily income percentage per 24 hours for a claim source. Valid 0-100.
+    Defaults: bank 2%, asset 1%, stock 1%. The income is claimed by users
+    via /interestbank, /interestasset and /stockinterest.
+    Example: /setincome asset 1.5
 
 /addtax system rate
     Set a transaction tax (percent) for one system. The tax is automatically
@@ -396,124 +456,57 @@ BANK
         /addtax payments 1      (1% on every /pay, sender pays amount + 1%)
         /addtax mines 5         (5% withheld from mines winnings)
 
+/dtax
+    Manually distribute the CURRENT tax pool to the monthly Top-10 earners
+    using the configured rank percentages. Unlike the automatic month-end
+    job, a manual run does not mark the month as distributed, so the monthly
+    auto-distribution still runs. Every manual run is audited in the
+    tax_distributions collection under its own key.
+    Example: /dtax
+
 /taxinfo
     Show the tax pool size and every per-system transaction tax rate.
+
+/banksettings
+    Show current interest rate, withdrawal tax and tax pool size.
 
 /track TRANSACTION_ID
     Look up one transaction by its id and show the full audit record: id,
     user, type, amount, balance before/after, metadata and timestamp.
     Example: /track 3f2a1b4c9d8e7f6a
 
-/setincome bank|asset|stock rate
-    Daily income percentage per 24 hours for a claim source. Valid 0-100.
-    Defaults: bank 2%, asset 1%, stock 1%. The income is claimed by users
-    via /interestbank, /interestasset and /stockinterest.
-    Example: /setincome asset 1.5
-
-GAMES — FLY
+LOANS (admin)
 --------------------------------------------------------------------------------
-/flyset low|medium|high field value
-    Change ONE fly difficulty setting.
-    Fields:  min_mult | max_mult | risk | win_prob | cooldown | min_bet | max_bet
-    Validation:
-        min_mult/max_mult : 0 to 1000, and min_mult <= max_mult
-        risk              : percent, 0 to 100
-        win_prob          : 0.0 to 1.0
-        min_bet/max_bet   : >= 0, and min_bet <= max_bet
-        cooldown          : seconds, >= 0
-    Example: /flyset high win_prob 0.40
+/setloan KEY VALUE
+    Configure the loan rules. Owner/sudo only.
+    Keys and valid ranges:
+        max        : maximum principal, > 0            (default ₹1,000)
+        interest   : overdue interest % per day, 0-100 (default 1)
+        mindays    : minimum duration in days, >= 1    (default 1)
+        maxdays    : maximum duration in days, >= 1    (default 7)
+        recovery   : % of new wallet income applied to debt, 0-100 (default 100)
+        enabled    : 1 (on) or 0 (off)                 (default on)
+    Example: /setloan max 200000   (₹2,000)
 
-    Current defaults per difficulty (cooldown 60s everywhere):
-        low     : min_mult 1.1, max_mult 1.6, risk 20%, win 75%, bet ₹1 - ₹1,000
-        medium  : min_mult 1.5, max_mult 2.5, risk 35%, win 55%, bet ₹1 - ₹2,500
-        high    : min_mult 2.0, max_mult 5.0, risk 50%, win 35%, bet ₹1 - ₹5,000
+/loanstats
+    Overall loan statistics: active, overdue and paid loans, total principal
+    issued, total outstanding, total interest accrued, total repaid and
+    unique borrowers.
 
-/flytrap difficulty min_mult max_mult risk win_prob cooldown min_bet max_bet
-    Overwrite ALL settings of one difficulty in a single command (same
-    validation as /flyset).
-    Example: /flytrap high 2.0 6.0 0.5 0.30 60 100 600000
+/loanuser USER
+    Show one user's active loan (target by ID / @username / UID / reply).
+    Example: /loanuser UID-000042
 
-GAMES — BET
+FREE REWARDS (admin)
 --------------------------------------------------------------------------------
-/betset win_prob multiplier min_bet max_bet [cooldown]
-    Configure the coin-flip game. win_prob is 0.0-1.0, multiplier 0-1000,
-    min_bet <= max_bet, cooldown in seconds (optional).
-    Defaults: win 0.5, multiplier 2.0, bet ₹1 - ₹1,000, cooldown 60s.
+/setreward daily|weekly|monthly amount
+    Set the free-currency claim amount for a reward. Amount must be > 0.
+    Cooldowns are fixed to the reward name (daily = 24h, weekly = 7 days,
+    monthly = 30 days).
+    Defaults: daily ₹500, weekly ₹3,000, monthly ₹12,000.
+    Example: /setreward daily 75000   (₹750)
 
-GAMES — MINES
---------------------------------------------------------------------------------
-/minestrap bombs min_reveals min_bet max_bet cooldown duration
-    Mines tuning. Board is 6x6 = 36 tiles.
-        bombs        : 1 to 34
-        min_reveals  : 1 to (36 - bombs)
-        min_bet/max_bet : >= 0, min_bet <= max_bet
-        cooldown     : seconds >= 0
-        duration     : seconds >= 30 (session expiry = auto-loss)
-    Defaults: 5 bombs, 3 min reveals, bet ₹1 - ₹2,000, cooldown 60s,
-    duration 300s (5 minutes).
-
-/minestrap multipliers 1.0,1.2,...
-    Set a custom payout table (comma separated, up to 17 entries — one per
-    reveal; the first entry is the 1st-reveal multiplier).
-
-/minestrap multipliers auto
-    Restore the built-in payout table:
-    1.0, 1.18, 1.4, 1.66, 2.0, 2.45, 3.0, 3.8, 4.9, 6.5, 9.0, 13.0, 19.0,
-    30.0, 50.0, 85.0, 150.0
-
-GAMES — ROB (crime tuning)
---------------------------------------------------------------------------------
-/robset field value
-    Configure /rob. Fields and defaults:
-        win_prob  : 0.0-1.0 (default 0.50)  chance the heist succeeds
-        percent   : 0-100   (default 10%)   share of victim's bank stolen
-        min       : >= 0    (default ₹1)    minimum stolen amount
-        max       : >= 0    (default ₹5,000) maximum stolen amount (min <= max)
-        cooldown  : seconds (default 60)
-    Example: /robset win_prob 0.60
-
-GAMES — EMOJI
---------------------------------------------------------------------------------
-/emojiset GAME field value
-    Set one config field for an emoji game (GAME = ball | arrow | basketball).
-    Fields and defaults:
-        enabled     : on/off            (default on)
-        single      : on/off            (default on)  solo rounds allowed
-        duel        : on/off            (default on)  duels allowed
-        cooldown    : seconds >= 0      (default 60)
-        min_bet     : >= 0              (default ₹1)
-        max_bet     : >= 0 (>= min)     (default ₹1,000)
-        multiplier  : 0 to 1000         (default ball 1.0, arrow/basketball 1.5)
-        rule        : gte | eq          (default ball gte, arrow eq, basketball gte)
-        target      : within dice range (default ball 5, arrow 6, basketball 4)
-        expiry      : seconds >= 0      (default 300) duel lobby lifetime
-    Example: /emojiset ball multiplier 2
-
-/emojitrap GAME key=value key=value ...
-    Bulk-set multiple fields at once (same fields as /emojiset).
-    Example: /emojitrap arrow rule=eq target=6 multiplier=2 cooldown=30
-
-/emojigameinfo GAME
-    Show the current configuration for one emoji game.
-
-/emojigames
-    Overview of all emoji games (enabled state, bet ranges, cooldown).
-
-GAMES — BLACKJACK
---------------------------------------------------------------------------------
-/bjset field value | /bjset key=value ...
-    Configure /blackjack. Fields and defaults:
-        enabled     : on/off    (default on)
-        cooldown    : seconds   (default 60)
-        min_bet     : >= 0      (default ₹1)
-        max_bet     : >= 0      (default ₹1,000)
-        multiplier  : 0 to 1000 (default 1.0 -> 2x on a win)
-    Example: /bjset multiplier 1.5
-
-/bjinfo
-    Show the current blackjack configuration.
-
-MARKET
+STOCK MARKET (admin)
 --------------------------------------------------------------------------------
 /addstock SYMBOL name base_price volatility
     List a NEW asset on the market (or re-list one that was removed).
@@ -531,7 +524,7 @@ MARKET
     Example: /rmstock DOGE
 
 ASSET MARKET (admin)
--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 Categories: REAL_ESTATE | VEHICLE | BUSINESS | GOLD | BOND | COMMODITY |
 LUXURY | COLLECTIBLE | DIGITAL | OTHER.
 
@@ -598,7 +591,7 @@ LUXURY | COLLECTIBLE | DIGITAL | OTHER.
     most-held assets.
 
 LISTING MARKET (admin)
--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 /listinginfo LISTING_ID
     Full listing report: seller, buyer, status, quantity, unit price, total.
     Example: /listinginfo LST-1A2B3C4D
@@ -610,21 +603,115 @@ LISTING MARKET (admin)
     remove only their own listing.)
     Example: /forcelisting LST-1A2B3C4D
 
-FREE REWARDS
+GAMES — FLY (admin)
 --------------------------------------------------------------------------------
-/setreward daily|weekly|monthly amount
-    Set the free-currency claim amount for a reward. Amount must be > 0.
-    Cooldowns are fixed to the reward name (daily = 24h, weekly = 7 days,
-    monthly = 30 days).
-    Defaults: daily ₹500, weekly ₹3,000, monthly ₹12,000.
-    Example: /setreward daily 75000   (₹750)
+/flyset low|medium|high field value
+    Change ONE fly difficulty setting.
+    Fields:  min_mult | max_mult | risk | win_prob | cooldown | min_bet | max_bet
+    Validation:
+        min_mult/max_mult : 0 to 1000, and min_mult <= max_mult
+        risk              : percent, 0 to 100
+        win_prob          : 0.0 to 1.0
+        min_bet/max_bet   : >= 0, and min_bet <= max_bet
+        cooldown          : seconds, >= 0
+    Example: /flyset high win_prob 0.40
 
-PROMO CODES
+    Current defaults per difficulty (cooldown 60s everywhere):
+        low     : min_mult 1.1, max_mult 1.6, risk 20%, win 75%, bet ₹1 - ₹1,000
+        medium  : min_mult 1.5, max_mult 2.5, risk 35%, win 55%, bet ₹1 - ₹2,500
+        high    : min_mult 2.0, max_mult 5.0, risk 50%, win 35%, bet ₹1 - ₹5,000
+
+/flytrap difficulty min_mult max_mult risk win_prob cooldown min_bet max_bet
+    Overwrite ALL settings of one difficulty in a single command (same
+    validation as /flyset).
+    Example: /flytrap high 2.0 6.0 0.5 0.30 60 100 600000
+
+GAMES — BET (admin)
+--------------------------------------------------------------------------------
+/betset win_prob multiplier min_bet max_bet [cooldown]
+    Configure the coin-flip game. win_prob is 0.0-1.0, multiplier 0-1000,
+    min_bet <= max_bet, cooldown in seconds (optional).
+    Defaults: win 0.5, multiplier 2.0, bet ₹1 - ₹1,000, cooldown 60s.
+
+GAMES — MINES (admin)
+--------------------------------------------------------------------------------
+/minestrap bombs min_reveals min_bet max_bet cooldown duration
+    Mines tuning. Board is 6x6 = 36 tiles.
+        bombs        : 1 to 34
+        min_reveals  : 1 to (36 - bombs)
+        min_bet/max_bet : >= 0, min_bet <= max_bet
+        cooldown     : seconds >= 0
+        duration     : seconds >= 30 (session expiry = auto-loss)
+    Defaults: 5 bombs, 3 min reveals, bet ₹1 - ₹2,000, cooldown 60s,
+    duration 300s (5 minutes).
+    The payout table can be customised:
+        /minestrap multipliers 1.0,1.2,...   custom table (comma separated,
+                                              up to 17 entries — one per
+                                              reveal; first entry = 1st-reveal)
+        /minestrap multipliers auto          restore the built-in table:
+        1.0, 1.18, 1.4, 1.66, 2.0, 2.45, 3.0, 3.8, 4.9, 6.5, 9.0, 13.0, 19.0,
+        30.0, 50.0, 85.0, 150.0
+
+GAMES — ROB (crime tuning, admin)
+--------------------------------------------------------------------------------
+/robset field value
+    Configure /rob. Fields and defaults:
+        win_prob  : 0.0-1.0 (default 0.50)  chance the heist succeeds
+        percent   : 0-100   (default 10%)   share of victim's bank stolen
+        min       : >= 0    (default ₹1)    minimum stolen amount
+        max       : >= 0    (default ₹5,000) maximum stolen amount (min <= max)
+        cooldown  : seconds (default 60)
+    Example: /robset win_prob 0.60
+
+GAMES — EMOJI (admin)
+--------------------------------------------------------------------------------
+/emojiset GAME field value
+    Set one config field for an emoji game (GAME = ball | arrow | basketball |
+    football | slot | dice).
+    Fields and defaults:
+        enabled     : on/off            (default on)
+        single      : on/off            (default on)  solo rounds allowed
+        duel        : on/off            (default on)  duels allowed
+        cooldown    : seconds >= 0      (default 60)
+        min_bet     : >= 0              (default ₹1)
+        max_bet     : >= 0 (>= min)     (default ₹1,000)
+        multiplier  : 0 to 1000         (default ball 1.0, arrow/basketball 1.5)
+        rule        : gte | eq          (default ball gte, arrow eq, basketball gte)
+        target      : within dice range (default ball 5, arrow 6, basketball 4)
+        expiry      : seconds >= 0      (default 300) duel lobby lifetime
+    Example: /emojiset ball multiplier 2
+
+/emojitrap GAME key=value key=value ...
+    Bulk-set multiple fields at once (same fields as /emojiset).
+    Example: /emojitrap arrow rule=eq target=6 multiplier=2 cooldown=30
+
+/emojigameinfo GAME
+    Show the current configuration for one emoji game.
+
+/emojigames
+    Overview of all emoji games (enabled state, bet ranges, cooldown).
+
+GAMES — BLACKJACK (admin)
+--------------------------------------------------------------------------------
+/bjset field value | /bjset key=value ...
+    Configure /blackjack. Fields and defaults:
+        enabled     : on/off    (default on)
+        cooldown    : seconds   (default 60)
+        min_bet     : >= 0      (default ₹1)
+        max_bet     : >= 0      (default ₹1,000)
+        multiplier  : 0 to 1000 (default 1.0 -> 2x on a win)
+    Example: /bjset multiplier 1.5
+
+/bjinfo
+    Show the current blackjack configuration.
+
+PROMO CODES (admin)
 --------------------------------------------------------------------------------
 Promo codes let admins give away currency, stocks and assets. Users redeem a
 promo by simply TYPING the code as a normal text message in DM, groups or
-supergroups — there is no /redeem command. Detection runs automatically; the
-code must appear as a 3-20 letter/number token in the message.
+supergroups. Detection runs automatically; the code must appear as a 3-20
+letter/number token in the message. The explicit /redeem CODE command is also
+supported and uses the same redemption engine.
 
 /addpromo CODE EXPIRY LIMIT REWARD [REWARD...]
     Create a promo code. Owner/sudo only.
@@ -669,7 +756,7 @@ code must appear as a 3-20 letter/number token in the message.
 
     Expired promos are deactivated automatically every minute.
 
-USERS
+USERS (admin)
 --------------------------------------------------------------------------------
 /freeze @user
     Freeze a user. They keep their money but cannot spend it (games, pay,
@@ -680,7 +767,7 @@ USERS
 
 /ban @user
     Full economy ban: the user cannot use any economy command at all.
-    You cannot ban yourself.
+    You cannot ban yourself or the owner.
 
 /unban @user
     Remove a ban.
@@ -689,91 +776,74 @@ USERS
     Full account report: wallet, bank, net worth, total earned/spent,
     monthly rank, transaction count, and BANNED/FROZEN badges.
 
-SECURITY COMMANDS (owner + sudo)
+SECURITY (admin)
 --------------------------------------------------------------------------------
 /gban @user | /gban user_id | reply to a user + /gban
     Globally ban a user. They cannot use the bot in any chat.
-    Sudo + owner only. Optionally add a reason as the 3rd argument:
-        /gban @sangam exploit_detected
-    Also bans the user from the local economy automatically.
+    Sudo + owner only. Also sets the local economy ban automatically.
+    Optionally add a reason as the 3rd argument; a reason containing
+    "exploit" or "critical" also creates a high-severity security case.
     Example: /gban @sangam 0day vulnerability
 
 /ungban @user | /ungban user_id | reply to a user + /ungban
     Remove a global ban. Sudo + owner only.
     Example: /ungban @sangam
 
-/clear
-    Manually clear a user's recovery balance to the default threshold.
-    Owner only. This does NOT ban or freeze the user; it only resets
-    the recovery balance that would trigger automatic /clear.
-    Example: /clear
+/clear USER | /clear user_id | reply to a user + /clear
+    Owner only. Backup + reset a user's economy:
+        1. snapshot the user's economy,
+        2. create a recovery dump and return a RECOVERY ID (dump id),
+        3. reset their wallet to the fresh-account starting balance.
+    The returned recovery ID is used with /restore or /recover to restore
+    the user's economy. This does NOT ban or freeze the user.
+    Example: /clear @sangam
 
 /restore DUMP-ID
-    Restore a user's economy data from a security dump. Owner only.
-    The dump ID must exist in the security dumps list.
-    Example: /restore dump_2024_001
+    Owner only. Restore a user's economy from a security dump. Each dump can
+    only be restored once.
+    Example: /restore DMP-1A2B3C4D
 
 /recover DUMP-ID
-    Recover a user from a security dump. Owner only.
-    Same as /restore but with different semantic intent.
-    Example: /recover dump_2024_001
+    Owner only. Same engine as /restore — recover a user from a security dump.
+    Example: /recover DMP-1A2B3C4D
 
 /restorecase CASE-ID
-    Restore a user from a security case. Owner only.
-    Cases are different from dumps — used for specific incident recovery.
-    Example: /restorecase case_2024_001
+    Owner only. Restore a user from a security case. Only works for cases
+    that carry a recoverable (recovery/restore) action.
+    Example: /restorecase CASE-XXXXXXXX
 
 /dumpinfo
-    Show details of all security dumps. Sudo + owner only.
-    Lists dump IDs, user counts, exploit counts, and creation timestamps.
-    Example: /dumpinfo
+    Sudo + owner only. List the most recent security dumps (up to 10) with
+    dump id, user count, type, creation time and status.
 
 /dumps
-    List all security dump IDs with basic info. Sudo + owner only.
-    Shows brief overview of each dump.
-    Example: /dumps
+    Sudo + owner only. List ALL security dumps with basic info: dump id, type,
+    user count, status, creation time.
 
 /securityset
-    View and edit security configuration. Owner only.
-    Current settings:
+    Owner only. View the current security configuration:
         • Secret detection: enabled/disabled
         • Global ban on exploit: enabled/disabled
         • Clear recovery balance: [number]
-    Example: /securityset
 
-USERS
+BROADCAST (admin)
 --------------------------------------------------------------------------------
-/freeze @user
-    Freeze a user. They keep their money but cannot spend it (games, pay,
-    rob, withdraw are blocked). Their balance stays intact.
+/bgc
+    Owner/sudo only. Reply to a message (text, photo, video, GIF, document or
+    audio, formatting preserved) and send it to every registered group.
+    Shows a confirmation with Confirm/Cancel buttons before sending; a large
+    broadcast waits for inline confirmation so nothing is sent twice.
+    The requester is excluded from the target list.
+    Example: (reply to a message) /bgc
 
-/unfreeze @user
-    Remove a freeze.
+/bdm
+    Owner/sudo only. Same as /bgc but sends to every registered user via
+    private message (DM). The requester is excluded from the target list.
+    Example: (reply to a message) /bdm
 
-/ban @user
-    Full economy ban: the user cannot use any economy command at all.
-    You cannot ban yourself.
-
-/unban @user
-    Remove a ban.
-
-/userinfo @user
-    Full account report: wallet, bank, net worth, total earned/spent,
-    monthly rank, transaction count, and BANNED/FROZEN badges.
-
-STATS
+GROUP CONFIGURATION (admin)
 --------------------------------------------------------------------------------
-/econstats
-    Economy-wide stats: user count, total money in circulation, total banked,
-    tax pool size, total transactions, number of active stock assets.
-
-GROUP CONFIGURATION
---------------------------------------------------------------------------------
-/setchat [setting] [on|off]          (inside a group)
-/setchat chat_id [setting] [on|off]  (from DM)
-/setchat chat_id                     (view a chat's config from DM)
-/setchat                             (view current group config from inside)
-
+/setchat chat_id [setting] [on|off]
     Per-group feature toggles. Stored centrally in MongoDB; defaults are all
     ON. Settings:
         group        — enable/disable the whole bot in that chat
@@ -784,10 +854,26 @@ GROUP CONFIGURATION
 
     When a feature is OFF the bot stays silent (or shows a short notice)
     for those commands in that group only.
+    Usage:
+        /setchat [setting] [on|off]          (inside the group)
+        /setchat chat_id [setting] [on|off]  (from DM)
+        /setchat chat_id                     (view a chat's config from DM)
+        /setchat                             (view current group config)
     Examples:
         /setchat games off                      (in the group)
         /setchat -1001234567890 economy off     (from DM)
         /setchat -1001234567890                 (view from DM)
+
+STATS & RESTART (admin)
+--------------------------------------------------------------------------------
+/econstats
+    Economy-wide stats: user count, total money in circulation, total banked,
+    tax pool size, total transactions, number of active stock assets.
+
+/restart
+    Fully restart the bot and reload all modules (pm2 restart, or in-place
+    re-exec when not running under pm2). You are notified when it is back
+    online.
 
 ================================================================================
 END OF COMMAND REFERENCE
