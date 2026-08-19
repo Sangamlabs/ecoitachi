@@ -279,6 +279,15 @@ def register(app: Client) -> None:
             await reply_html(client, message, msgs.error(f"Usage: <code>/getcoin amount</code>. {err}"))
             return
         actor = message.from_user.id
+        if amount > config.GETCOIN_MAX_SUBUNITS:
+            await reply_html(
+                client,
+                message,
+                msgs.error(
+                    f"Maximum /getcoin amount is {format_money(config.GETCOIN_MAX_SUBUNITS)}."
+                ),
+            )
+            return
         await economy.admin_give(actor, amount, actor)
         before = await economy.get_balance(actor)
         tx_id = await tx_service2.record(
@@ -570,6 +579,78 @@ def register(app: Client) -> None:
             changes["cooldown"] = max(0, cooldown)
         await settings_service.update_game_settings("bet", **changes)
         await reply_html(client, message, msgs.success("Bet game settings updated."))
+
+    # ---------------- COLOUR GAME ----------------
+    @app.on_message(filters.command("colourset") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler
+    async def cmd_colourset(client: Client, message: Message):
+        await ensure_user(client, message)
+        args = message.command[1:]
+        if len(args) < 2:
+            await reply_html(
+                client, message,
+                msgs.error(
+                    "Usage: <code>/colourset field value [value...]</code>\n"
+                    "Fields: min_bet | max_bet | cooldown | duration | "
+                    "multipliers 0 1.5 4 8 | max_multiplier | max_payout\n"
+                    "Example: <code>/colourset multipliers 0 1.5 4 8</code>"
+                ),
+            )
+            return
+        field = args[0].lower()
+        values = args[1:]
+        current = await settings_service.get_game_settings("colour")
+        try:
+            if field == "multipliers":
+                table = [float(x) for x in values]
+                if len(table) < 2 or any(not is_safe_multiplier(x) for x in table):
+                    await reply_html(client, message, msgs.error("Provide at least 2 finite multipliers between 0 and 1000."))
+                    return
+                next_settings = dict(current)
+                next_settings["match_multipliers"] = table
+            elif field in ("min_bet", "max_bet", "cooldown", "duration", "max_payout"):
+                value = int(float(values[0]))
+                if value < 0:
+                    await reply_html(client, message, msgs.error("Value must be >= 0."))
+                    return
+                next_settings = dict(current)
+                key = (
+                    "minimum_bet" if field == "min_bet"
+                    else ("maximum_bet" if field == "max_bet" else field)
+                )
+                next_settings[key] = value
+            elif field == "max_multiplier":
+                multiplier = float(values[0])
+                if not is_safe_multiplier(multiplier):
+                    await reply_html(client, message, msgs.error("Multiplier must be between 0 and 1000."))
+                    return
+                next_settings = dict(current)
+                next_settings["max_multiplier"] = multiplier
+            else:
+                await reply_html(client, message, msgs.error("Unknown field. See /colourset usage."))
+                return
+        except ValueError:
+            await reply_html(client, message, msgs.error("Invalid numeric value."))
+            return
+        if not validate_min_max(
+            int(next_settings.get("minimum_bet", 0)),
+            int(next_settings.get("maximum_bet", 0)),
+        ):
+            await reply_html(client, message, msgs.error("Minimum bet cannot exceed maximum bet."))
+            return
+        if int(next_settings.get("duration", 0)) < 1:
+            await reply_html(client, message, msgs.error("duration must be at least 1 second."))
+            return
+        if int(next_settings.get("max_payout", 0)) <= 0:
+            await reply_html(client, message, msgs.error("max_payout must be greater than 0."))
+            return
+        changes = {k: v for k, v in next_settings.items() if current.get(k) != v}
+        if not changes:
+            await reply_html(client, message, msgs.success("Colour game settings unchanged."))
+            return
+        await settings_service.update_game_settings("colour", **changes)
+        await reply_html(client, message, msgs.success("Colour game settings updated."))
 
     # ---------------- MINES GAME ----------------
     @app.on_message(filters.command("minestrap") & NOT_CHANNEL)

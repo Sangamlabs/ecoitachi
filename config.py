@@ -46,6 +46,15 @@ class Config:
     )
     PM2_APP_NAME: str = os.getenv("PM2_APP_NAME", "testeco")
     LOG_DIR: Path = BASE_DIR / "logs"
+    # Absolute ceiling for a single parsed monetary amount, in sub-units.
+    # Default ₹10,000,000,000 (1000 crore) = 10**12 sub-units.  Inputs above
+    # this are REJECTED (never clamped).  This is a max INPUT amount, not a
+    # balance cap; command-specific limits (bets, etc.) still apply separately.
+    MAX_AMOUNT_SUBUNITS: int = int(os.getenv("MAX_AMOUNT_SUBUNITS", str(10**12)))
+    # Strict cap for the /getcoin self-credit command (default ₹10,000,000).
+    # /getcoin mints money with no counterparty, so it gets its own tighter
+    # limit on top of the shared parser ceiling.
+    GETCOIN_MAX_SUBUNITS: int = int(os.getenv("GETCOIN_MAX_SUBUNITS", str(10**9)))
 
     def validate(self) -> None:
         """Raise a clear error if mandatory configuration is missing."""

@@ -8,12 +8,28 @@ Only pure functions live here so they can be unit tested without a database.
 from __future__ import annotations
 
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Union
+
+from config import config
 
 UNIT = 100  # 1 UN = 100 sub-units
 SYMBOL = "₹"
 
 Number = Union[int, str, float]
+
+# Human-readable rupee multipliers (case-insensitive): 10k = 10,000 rupees,
+# 1.5m = 1,500,000, 1b = 1,000,000,000, 1t = 1,000,000,000,000, 1 crore, 1 lakh.
+_HUMAN_SUFFIXES: dict[str, Decimal] = {
+    "k": Decimal(10**3),
+    "m": Decimal(10**6),
+    "b": Decimal(10**9),
+    "t": Decimal(10**12),
+    "lakh": Decimal(10**5),
+    "crore": Decimal(10**7),
+}
+_PLAIN_RE = re.compile(r"\d+(\.\d{1,2})?")
+_HUMAN_RE = re.compile(r"(\d+(?:\.\d+)?)\s*([a-z]+)", re.IGNORECASE)
 
 
 class MoneyError(ValueError):
@@ -32,10 +48,46 @@ def _to_int(value: Number) -> int:
     raise MoneyError(f"cannot parse {value!r} as money")
 
 
+def _parse_human(cleaned: str) -> int | None:
+    """Parse a human-readable form (``10k``, ``1.5m``, ``1 lakh``, ``1 crore``).
+
+    Returns integer sub-units, ``None`` when the input is not human-readable,
+    or raises :class:`MoneyError` when the suffix is unknown or the value is
+    too precise to fit whole sub-units.
+    """
+    match = _HUMAN_RE.fullmatch(cleaned)
+    if not match:
+        return None
+    suffix = match.group(2).lower()
+    multiplier = _HUMAN_SUFFIXES.get(suffix)
+    if multiplier is None:
+        raise MoneyError("invalid amount")
+    try:
+        sub_units = Decimal(match.group(1)) * multiplier * UNIT
+    except InvalidOperation:
+        raise MoneyError("invalid amount")
+    if sub_units != sub_units.to_integral_value():
+        raise MoneyError("amount is too precise (minimum is 0.01)")
+    return int(sub_units)
+
+
+def _parse_plain(cleaned: str) -> int | None:
+    """Parse a plain decimal form (``500``, ``10.50``, ``1,000.25``)."""
+    if not _PLAIN_RE.fullmatch(cleaned):
+        return None
+    if "." in cleaned:
+        whole, _, frac = cleaned.partition(".")
+        frac = (frac + "00")[:2]
+        return int(whole) * UNIT + int(frac)
+    return int(cleaned) * UNIT
+
+
 def parse_amount(raw: str) -> int:
     """Parse a user-supplied amount string into integer sub-units.
 
-    Accepts forms like ``500``, ``10.50``, ``1,000.25``, ``0.01``.
+    Accepts plain forms (``500``, ``10.50``, ``1,000.25``, ``0.01``) and
+    human-readable forms (``10k``, ``1.5m``, ``1b``, ``1 lakh``, ``1 crore``).
+    Values above the configured absolute ceiling are REJECTED (never clamped).
     Rejects zero, negatives, NaN, and anything non-numeric.
     """
     if not isinstance(raw, str):
@@ -43,13 +95,16 @@ def parse_amount(raw: str) -> int:
     cleaned = raw.strip().replace(",", "").replace(SYMBOL, "")
     if not cleaned:
         raise MoneyError("amount is empty")
-    if not re.fullmatch(r"\d+(\.\d{1,2})?", cleaned):
+    value = _parse_human(cleaned)
+    if value is None:
+        value = _parse_plain(cleaned)
+    if value is None:
         raise MoneyError(f"invalid amount: {raw!r}")
-    if "." in cleaned:
-        whole, _, frac = cleaned.partition(".")
-        frac = (frac + "00")[:2]
-        return int(whole) * UNIT + int(frac)
-    return int(cleaned) * UNIT
+    if value > config.MAX_AMOUNT_SUBUNITS:
+        raise MoneyError(
+            f"amount exceeds the maximum of {format_money(config.MAX_AMOUNT_SUBUNITS)}"
+        )
+    return value
 
 
 def is_valid_amount(raw: str) -> bool:

@@ -19,6 +19,7 @@ from pymongo.errors import DuplicateKeyError
 from database import promos as promos_db
 from database import users as users_db
 from services.promo_rewards import (
+    PromoRewardError,
     describe_reward,
     grant_bundle,
     parse_reward_tokens,
@@ -375,25 +376,45 @@ async def redeem(user_id: int, code, chat_id: int | None = None) -> dict:
         raise
 
     transaction_ids = [g["tx_id"] for g in granted if g.get("tx_id")]
-    await promos_db.update_redemption(
-        redemption_id,
-        {
-            "status": "completed",
-            "rewards_granted": [
-                {
-                    "type": g["type"],
-                    "amount": g.get("amount", 0),
-                    "detail": g.get("detail", ""),
-                    "description": g.get("description", ""),
-                    "tx_id": g.get("tx_id"),
-                }
-                for g in granted
-            ],
-            "transaction_ids": transaction_ids,
-            "completed_at": now,
-            "updated_at": now,
-        },
-    )
+    completed = {
+        "status": "completed",
+        "rewards_granted": [
+            {
+                "type": g["type"],
+                "amount": g.get("amount", 0),
+                "detail": g.get("detail", ""),
+                "description": g.get("description", ""),
+                "tx_id": g.get("tx_id"),
+            }
+            for g in granted
+        ],
+        "transaction_ids": transaction_ids,
+        "completed_at": now,
+        "updated_at": now,
+    }
+    try:
+        await promos_db.update_redemption(redemption_id, completed)
+    except Exception:
+        logger.exception(
+            "promo redemption update failed; retrying user=%s promo=%s",
+            user_id,
+            promo["_id"],
+        )
+        try:
+            await promos_db.update_redemption(redemption_id, completed)
+        except Exception:
+            logger.exception(
+                "promo redemption update retry failed user=%s promo=%s",
+                user_id,
+                promo["_id"],
+            )
+            # Money was already granted; do NOT roll back or delete the
+            # redemption (that would allow a double grant).  The unique
+            # (promo_id, user_id) index still blocks a second redemption.
+            raise PromoRewardError(
+                "Reward was granted but the confirmation record could not be "
+                "saved. Please contact an admin."
+            ) from None
     return {"promo": promo, "granted": granted, "redemption_id": redemption_id}
 
 

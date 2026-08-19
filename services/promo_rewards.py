@@ -67,13 +67,14 @@ class CurrencyRewardHandler:
 
     async def grant(self, reward: dict, user_id: int, promo: dict) -> dict:
         amount = int(reward["amount"])
-        await economy.add_wallet(user_id, amount, earn=True)
+        before = await economy.get_balance(user_id)
+        result = await economy.add_wallet(user_id, amount, earn=True)
         tx_id = await tx_service.record(
             user_id=user_id,
             ttype=tx_service.PROMO_CURRENCY,
             amount=amount,
-            balance_before=0,
-            balance_after=amount,
+            balance_before=before["wallet"],
+            balance_after=result["wallet"],
             metadata={
                 "amount": amount,
                 "promo_id": promo["promo_id"],
