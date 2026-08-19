@@ -41,6 +41,8 @@ ZERO_USER = {
     "is_banned": False,
     "is_frozen": False,
     "is_bot": False,
+    "bot_started": False,
+    "leaderboard_excluded": False,
     "last_interest_at": None,
 }
 

@@ -1,10 +1,10 @@
 UNOITACHI — COMPLETE COMMAND LIST
 =================================
-Generated from the live handler registry (128 commands).
+Generated from the live handler registry (134 commands).
 Targets in square brackets accept Telegram ID, @username, UNOITACHI UID, or replying to a user.
 Full reference with defaults: docs/COMMANDS.txt
 
-USER COMMANDS (57)
+USER COMMANDS (58)
 ==================
 Basics
   /start                welcome message (private chat only)
@@ -66,6 +66,7 @@ Games
   /fly low|medium|high amount   fly game
   /mines amount                 6x6 mines board (inline buttons)
   /bet amount                   coin bet
+  /colour amount                pick size, colour & number
   /blackjack amount             play the dealer
   /rob @user                    steal from a user's bank
 
@@ -79,7 +80,7 @@ Promo Codes
                                 detects and redeems it automatically
   /redeem CODE                  redeem a code explicitly (same engine)
 
-ADMIN COMMANDS (owner + sudo, 59)
+ADMIN COMMANDS (owner + sudo, 64)
 =================================
 Economy
   /give @user amount            give money
@@ -137,6 +138,7 @@ Games
   /flytrap difficulty 8 values           fly bulk set
   /betset win_prob multiplier min_bet max_bet [cooldown]
   /minestrap ...                         mines tuning
+  /colourset field value                 colour tuning
   /robset field value                    rob tuning
 
 Emoji Games
@@ -154,12 +156,18 @@ Users
   /unfreeze @user                  unfreeze a user
   /ban @user                       ban a user
   /unban @user                     unban a user
+  /leaderban @user                 hide a user from all leaderboards
+  /leaderunban @user               restore a user on the leaderboards
+  /clearlb AMOUNT USER_COUNT       remove AMOUNT from each of the top USER_COUNT users
   /userinfo @user                  user details
   /setchat [chat_id] [setting] [on|off]    group config
 
 Broadcast (reply to a message)
-  /bgc                             broadcast to all registered groups
-  /bdm                             broadcast to all users via DM
+  /bgc                             broadcast to all registered groups (auto-registered on join)
+  /bdm                             broadcast to all users who started the bot via DM
+
+Admin Panel
+  /adminpanel                      interactive inline-button admin menu
 
 System
   /adminhelp                       this help

@@ -59,6 +59,10 @@ register("net_worth", net_worth)
 register("monthly_earnings", monthly_earnings)
 
 
+# Users excluded from every leaderboard (set with /leaderban).
+_ELIGIBLE = {"is_banned": False, "leaderboard_excluded": {"$ne": True}}
+
+
 async def top_net_worth(limit: int = 10) -> list[dict[str, Any]]:
     """Return the top-N users by net worth with live stock valuation.
 
@@ -67,7 +71,7 @@ async def top_net_worth(limit: int = 10) -> list[dict[str, Any]]:
     """
     cursor = (
         mongo.db[users_db.COLLECTION]
-        .find({"is_banned": False})
+        .find(dict(_ELIGIBLE))
         .sort([("wallet", -1)])
         .limit(limit * 5)
     )
@@ -80,7 +84,7 @@ async def top_net_worth(limit: int = 10) -> list[dict[str, Any]]:
 async def top_monthly(limit: int = 10) -> list[dict[str, Any]]:
     cursor = (
         mongo.db[users_db.COLLECTION]
-        .find({"is_banned": False})
+        .find(dict(_ELIGIBLE))
         .sort([("monthly_earnings", -1)])
         .limit(limit)
     )
@@ -91,7 +95,7 @@ async def top_bank(limit: int = 10) -> list[dict[str, Any]]:
     """Return the top-N users by bank balance."""
     cursor = (
         mongo.db[users_db.COLLECTION]
-        .find({"is_banned": False})
+        .find(dict(_ELIGIBLE))
         .sort([("bank", -1)])
         .limit(limit)
     )
@@ -102,3 +106,47 @@ def name_of(user: dict[str, Any]) -> str:
     if user.get("username"):
         return user["username"]
     return user.get("first_name") or "Unknown"
+
+
+async def apply_clearlb(amount: int, user_count: int, actor_id: int) -> dict[str, Any]:
+    """Deduct ``amount`` from each of the top ``user_count`` eligible users.
+
+    Used by the ``/clearlb`` admin command.  Reads the leaderboard fresh,
+    skips the owner, and per user runs an atomic guarded ``economy.admin_remove``
+    plus an ``ADMIN_REMOVE`` audit transaction.  Users that cannot cover
+    ``amount`` are skipped — a wallet is never made negative.
+
+    Returns ``{"amount", "done": [...], "skipped": [...]}``.
+    """
+    from config import config
+    from services import economy, transaction as tx_service
+
+    if amount <= 0:
+        raise ValueError("amount must be positive")
+    if user_count < 1:
+        raise ValueError("user_count must be at least 1")
+
+    top = await top_net_worth(user_count)
+    done: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for user in top:
+        user_id = user["user_id"]
+        if user_id == config.OWNER_ID:
+            skipped.append({"user_id": user_id, "reason": "owner"})
+            continue
+        try:
+            before = await economy.get_balance(user_id)
+            await economy.admin_remove(user_id, amount, actor_id)
+            tx_id = await tx_service.record(
+                user_id=user_id,
+                ttype=tx_service.ADMIN_REMOVE,
+                amount=amount,
+                balance_before=before["wallet"],
+                balance_after=before["wallet"] - amount,
+                metadata={"actor": actor_id, "reason": "clearlb"},
+            )
+            done.append({"user_id": user_id, "tx_id": tx_id})
+        except economy.EconomyError as exc:
+            skipped.append({"user_id": user_id, "reason": str(exc)})
+
+    return {"amount": amount, "done": done, "skipped": skipped}

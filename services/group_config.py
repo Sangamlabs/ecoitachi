@@ -44,6 +44,11 @@ async def get_group_config(chat_id: int) -> dict[str, Any]:
     return merged
 
 
+async def ensure_registered(chat_id: int) -> None:
+    """Idempotently register a chat as a broadcast/group target."""
+    await group_config_db.ensure_registered(chat_id)
+
+
 async def update_group_config(chat_id: int, **changes: Any) -> dict[str, Any]:
     """Persist the given overrides for a chat and return the merged config."""
     allowed = {k: v for k, v in changes.items() if k in DEFAULT_GROUP_CONFIG}

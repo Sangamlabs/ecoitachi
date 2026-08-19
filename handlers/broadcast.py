@@ -59,7 +59,7 @@ async def _prepare_broadcast(
 
     reply = message.reply_to_message
     source_chat_id = reply.chat.id
-    source_message_id = reply.message_id
+    source_message_id = reply.id
 
     if broadcast_type == broadcast_service.TYPE_DM:
         targets = await broadcast_service.get_target_users()

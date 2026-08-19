@@ -100,10 +100,10 @@ async def _distribute(now: int, label: str, manual: bool) -> dict[str, Any] | No
         )
         return None
 
-    # Monthly Top-10 by monthly_earnings (excluding banned users).
+    # Monthly Top-10 by monthly_earnings (excluding banned + leaderboard-excluded users).
     cursor = (
         mongo.db[users_db.COLLECTION]
-        .find({"is_banned": False})
+        .find({"is_banned": False, "leaderboard_excluded": {"$ne": True}})
         .sort([("monthly_earnings", -1)])
         .limit(10)
     )

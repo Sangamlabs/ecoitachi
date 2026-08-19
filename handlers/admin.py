@@ -845,6 +845,76 @@ def register(app: Client) -> None:
         await users_db.set_user_flags(target, is_banned=False)
         await reply_html(client, message, msgs.success(f"Unbanned <code>{target}</code>."))
 
+    # ---------------- LEADERBOARD EXCLUSION (visibility only) ----------------
+    @app.on_message(filters.command("leaderban") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler
+    async def cmd_leaderban(client: Client, message: Message):
+        """Hide a user from every leaderboard (no Telegram/economy ban)."""
+        target = await _need_target_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        if target is None:
+            return
+        if await utils_is_owner(target):
+            await reply_html(client, message, msgs.error("You cannot exclude the owner from the leaderboard."))
+            return
+        await users_db.set_user_flags(target, leaderboard_excluded=True)
+        await reply_html(client, message, msgs.success(f"<code>{target}</code> is now hidden from all leaderboards."))
+
+    @app.on_message(filters.command("leaderunban") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler
+    async def cmd_leaderunban(client: Client, message: Message):
+        """Restore a user's visibility on every leaderboard."""
+        target = await _need_target_or_error(client, message, message.command[1] if len(message.command) > 1 else None)
+        if target is None:
+            return
+        await users_db.set_user_flags(target, leaderboard_excluded=False)
+        await reply_html(client, message, msgs.success(f"<code>{target}</code> is visible on the leaderboards again."))
+
+    # ---------------- /clearlb - deduct from top leaderboard users ----------------
+    @app.on_message(filters.command("clearlb") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler(feature="admin")
+    async def cmd_clearlb(client: Client, message: Message):
+        """Remove AMOUNT from each of the top USER_COUNT leaderboard users."""
+        args = message.command[1:]
+        if len(args) < 2:
+            await reply_html(
+                client, message,
+                msgs.error("Usage: <code>/clearlb AMOUNT USER_COUNT</code>"),
+            )
+            return
+        amount, err = parse_amount_or_error(args[0])
+        if err:
+            await reply_html(client, message, msgs.error(err))
+            return
+        try:
+            user_count = int(args[1])
+        except ValueError:
+            await reply_html(client, message, msgs.error("USER_COUNT must be a whole number."))
+            return
+        if user_count < 1 or user_count > 20:
+            await reply_html(client, message, msgs.error("USER_COUNT must be between 1 and 20."))
+            return
+
+        from services import leaderboard as leaderboard_service
+
+        try:
+            result = await leaderboard_service.apply_clearlb(
+                amount=amount, user_count=user_count, actor_id=message.from_user.id
+            )
+        except ValueError as exc:
+            await reply_html(client, message, msgs.error(str(exc)))
+            return
+        await reply_html(
+            client, message,
+            msgs.clearlb_result(
+                amount=result["amount"],
+                done=result["done"],
+                skipped=result["skipped"],
+            ),
+        )
+
     # ---------------- USERINFO ----------------
     @app.on_message(filters.command("userinfo") & NOT_CHANNEL)
     @sudo_only

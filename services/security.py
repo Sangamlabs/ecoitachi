@@ -455,7 +455,7 @@ async def handle_secret_detection(client: Client, message: Message) -> Optional[
         actor_id=user_id,
         details={
             "secret_type": detected_type,
-            "message_id": message.message_id,
+            "message_id": message.id,
             "chat_id": message.chat.id if message.chat else 0,
         },
     )
@@ -466,6 +466,6 @@ async def handle_secret_detection(client: Client, message: Message) -> Optional[
     return {
         "secret_type": detected_type,
         "user_id": user_id,
-        "message_id": message.message_id,
+        "message_id": message.id,
         "action_taken": False,  # No automatic action taken
     }

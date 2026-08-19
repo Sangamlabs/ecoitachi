@@ -18,6 +18,8 @@ def register(app: Client) -> None:
         await ensure_user(client, message)
         user = message.from_user
         doc = await users_db.get_user(user.id)
+        # A private /start marks the user as a DM broadcast target.
+        await users_db.set_user_flags(user.id, bot_started=True)
         await reply_html(client, message, start(doc))
 
     @app.on_message(filters.command("help") & filters.private)

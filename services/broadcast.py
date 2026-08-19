@@ -66,11 +66,20 @@ async def get_target_chats() -> list[int]:
 
 
 async def get_target_users() -> list[int]:
-    """User IDs of all registered, non-banned, non-frozen users."""
+    """User IDs of all registered DM targets.
+
+    Eligible users must have started the bot (``bot_started``), and bot
+    accounts, banned and frozen users are excluded.
+    """
     from database import users as users_db
 
     cursor = mongo.db[users_db.COLLECTION].find(
-        {"is_banned": {"$ne": True}, "is_frozen": {"$ne": True}},
+        {
+            "is_banned": {"$ne": True},
+            "is_frozen": {"$ne": True},
+            "is_bot": {"$ne": True},
+            "bot_started": True,
+        },
         {"user_id": 1, "_id": 0},
     )
     return [doc["user_id"] async for doc in cursor]

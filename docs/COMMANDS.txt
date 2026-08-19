@@ -80,6 +80,7 @@ ECONOMY
 
 /leader
     Top-10 net-worth leaderboard (wallet + bank + live stock value).
+    Users hidden with /leaderban are never shown; the owner is always shown.
 
 /topbank
     Top-10 bank balance leaderboard (highest bank deposits only).
@@ -802,6 +803,24 @@ USERS (admin)
 /unban @user
     Remove a ban.
 
+/leaderban @user
+    Hide a user from EVERY leaderboard (/leader, /topbank and the monthly
+    tax distribution). This is a VISIBILITY toggle only — it does not ban,
+    freeze or otherwise affect their economy. The owner can never be hidden.
+    Example: /leaderban @sangam
+
+/leaderunban @user
+    Restore a user's visibility on every leaderboard.
+    Example: /leaderunban @sangam
+
+/clearlb AMOUNT USER_COUNT
+    Remove AMOUNT from the wallet of each of the top USER_COUNT net-worth
+    users (fresh read, exclusions honored). Each deduction is atomic and
+    guarded — a user whose wallet cannot cover AMOUNT is skipped, never made
+    negative — and every deduction logs an ADMIN_REMOVE transaction with
+    reason "clearlb". USER_COUNT must be 1-20. The owner is always skipped.
+    Example: /clearlb 50000 10
+
 /userinfo @user
     Full account report: wallet, bank, net worth, total earned/spent,
     monthly rank, transaction count, and BANNED/FROZEN badges.
@@ -857,19 +876,32 @@ SECURITY (admin)
         • Clear recovery balance: [number]
 
 BROADCAST (admin)
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 /bgc
     Owner/sudo only. Reply to a message (text, photo, video, GIF, document or
     audio, formatting preserved) and send it to every registered group.
-    Shows a confirmation with Confirm/Cancel buttons before sending; a large
-    broadcast waits for inline confirmation so nothing is sent twice.
+    Groups are registered AUTOMATICALLY when the bot joins them or receives a
+    message in them — no manual /setchat needed. Shows a confirmation with
+    Confirm/Cancel buttons before sending; a large broadcast waits for inline
+    confirmation so nothing is sent twice.
     The requester is excluded from the target list.
     Example: (reply to a message) /bgc
 
 /bdm
-    Owner/sudo only. Same as /bgc but sends to every registered user via
-    private message (DM). The requester is excluded from the target list.
+    Owner/sudo only. Same as /bgc but sends to every user who has STARTED the
+    bot (sent /start in a private chat) via DM. Bot accounts, banned and
+    frozen users are excluded, and the requester is skipped. Sends to a user
+    who blocked the bot are counted as "blocked", not failures.
     Example: (reply to a message) /bdm
+
+ADMIN PANEL (admin)
+-------------------------------------------------------------------------------
+/adminpanel
+    Owner/sudo only. Opens an interactive inline-button menu that groups every
+    admin command by category (economy, bank & taxes, loans, markets, promos,
+    games, users, broadcast, system & recovery). Every button re-verifies the
+    Telegram user id — callback data is never trusted for permissions.
+    Example: /adminpanel
 
 GROUP CONFIGURATION (admin)
 --------------------------------------------------------------------------------

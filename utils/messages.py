@@ -502,12 +502,16 @@ def admin_help() -> str:
         f"<b>👥 Users</b>\n"
         f"<code>/freeze @user</code> / <code>/unfreeze @user</code>\n"
         f"<code>/ban @user</code> / <code>/unban @user</code>\n"
+        f"<code>/leaderban @user</code> / <code>/leaderunban @user</code> — hide/show a user on leaderboards\n"
+        f"<code>/clearlb AMOUNT USER_COUNT</code> — remove AMOUNT from each of the top USER_COUNT users\n"
         f"<code>/gban @user</code> / <code>/ungban @user</code> — global ban (owner + sudo)\n"
         f"<code>/userinfo @user</code> — user details\n"
         f"<code>/setchat [chat_id] [setting] [on|off]</code> — group config\n\n"
         f"<b>📢 Broadcast (reply to a message)</b>\n"
-        f"<code>/bgc</code> — broadcast to all registered groups\n"
-        f"<code>/bdm</code> — broadcast to all users via DM\n\n"
+        f"<code>/bgc</code> — broadcast to all registered groups (auto-registered on join)\n"
+        f"<code>/bdm</code> — broadcast to all users who started the bot via DM\n\n"
+        f"<b>🖥 Admin Panel</b>\n"
+        f"<code>/adminpanel</code> — interactive inline-button admin menu\n\n"
         f"<b>📊 Stats & Recovery</b>\n"
         f"<code>/econstats</code> — economy stats\n"
         f"<code>/dumps</code> / <code>/dumpinfo</code> — security dumps (owner + sudo)\n"
@@ -518,6 +522,23 @@ def admin_help() -> str:
         f"<code>/restart</code> — restart the bot process\n"
         f"<code>/adminhelp</code> — this help"
     )
+
+
+def clearlb_result(amount: int, done: list[dict[str, Any]], skipped: list[dict[str, Any]]) -> str:
+    """Report for the /clearlb command."""
+    lines = [
+        f"<b>🧹 CLEAR LEADERBOARD</b>",
+        f"<blockquote>💰 Removed <b>{format_money(amount)}</b> from each of "
+        f"{len(done)} user(s).",
+    ]
+    for entry in done:
+        lines.append(f"  • User <code>{entry['user_id']}</code> — 🧾 <code>#{entry['tx_id']}</code>")
+    lines.append("</blockquote>")
+    if skipped:
+        lines.append("<b>Skipped:</b>")
+        for entry in skipped:
+            lines.append(f"  • User <code>{entry['user_id']}</code> — {entry['reason']}")
+    return "\n".join(lines)
 
 
 def admin_stats(stats: dict[str, Any]) -> str:
