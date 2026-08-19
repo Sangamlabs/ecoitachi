@@ -277,6 +277,33 @@ async def set_user_asset(user_id: int, asset_id: str, quantity: float) -> None:
     await ah_db.set_holding_quantity(user_id, asset_id, quantity)
 
 
+async def clear_economy(user_id: int, wallet_value: int) -> None:
+    """Reset the user's current economy state for the /clear command.
+
+    Sets the wallet to ``wallet_value``, zeroes the bank and deletes every
+    stock / asset holding, then refreshes the cached ``stocks_value`` /
+    ``asset_value`` fields so ALL rankings (/leader, /topbank, /profile, /bal)
+    read the fresh authoritative state immediately.
+
+    Historical earnings statistics (``total_earned``, ``monthly_earnings``,
+    ``monthly_rank``), loan liability state, and security/recovery records are
+    intentionally left untouched — /clear resets current holdings, not history.
+    """
+    from database import asset_holdings as ah_db, stocks as stocks_db
+    from services import assets as asset_service
+
+    await set_user_balance(user_id, "wallet", wallet_value)
+    await set_user_balance(user_id, "bank", 0)
+
+    for holding in await stocks_db.get_user_holdings(user_id):
+        await set_user_stock(user_id, holding["symbol"], 0)
+    await users_db.set_user_field(user_id, "stocks_value", 0)
+
+    for holding in await ah_db.get_user_holdings(user_id):
+        await set_user_asset(user_id, holding["asset_id"], 0)
+    await asset_service.refresh_user_asset_value(user_id)
+
+
 async def mongo_db_update_guarded(user_id: int, amount: int, inc: dict[str, int]):
     """Run a guarded atomic wallet update and return the updated user doc."""
     return await mongo.db[users_db.COLLECTION].find_one_and_update(

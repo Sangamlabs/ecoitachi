@@ -294,10 +294,19 @@ async def manual_clear(operator_id: int, target_user_id: Optional[int] = None) -
         1. snapshot the user's economy,
         2. create a recovery dump + generate a recovery ID (dump_id),
         3. record an audit event,
-        4. reset the economy wallet to the project's fresh-account balance
-           (``starting_balance``), never to a security/recovery sentinel,
+        4. reset the user's current economy state through the Economy Service:
+           wallet -> ``starting_balance`` (never a security/recovery sentinel),
+           bank -> 0, stock/asset holdings removed, cached value fields
+           refreshed — so /bal, /profile, /topbank and /leader all read the
+           fresh authoritative state immediately,
         5. persist recovery state in the security/recovery database layer,
-        6. return ``(ok, message, recovery_id)``.
+        6. fresh-DB verification — recompute net worth from the authoritative
+           database and confirm it equals the expected cleared value,
+        7. return ``(ok, message, recovery_id)``.
+
+    Historical earnings statistics and loan liability state are intentionally
+    left untouched; the recovery dump (snapshot) fully covers wallet, bank,
+    stocks and assets so /recover and /restore remain fully usable.
 
     The economy reset is performed through the Economy Service (owner of
     balances); recovery state is owned by the security/recovery DB layer.
@@ -323,11 +332,11 @@ async def manual_clear(operator_id: int, target_user_id: Optional[int] = None) -
         details={"dump_id": recovery_id, "action": "/clear", "reset_wallet": reset_wallet},
     )
 
-    # 4. Reset the economy wallet through the Economy Service.
+    # 4. Reset the user's current economy state through the Economy Service.
     from services import economy as econ
 
     if await users_db.user_exists(target_user_id):
-        await econ.set_user_balance(target_user_id, "wallet", reset_wallet)
+        await econ.clear_economy(target_user_id, reset_wallet)
         ok = True
     else:
         ok = False
@@ -346,12 +355,43 @@ async def manual_clear(operator_id: int, target_user_id: Optional[int] = None) -
         details={"dump_id": recovery_id, "reset_wallet": reset_wallet, "action": "/clear"},
     )
 
+    # 6. Fresh-DB verification — every ranking (/leader, /topbank, /profile,
+    #    /bal) reads the authoritative database, so recompute the cleared net
+    #    worth from fresh values and confirm it matches the expected state.
+    verified = None
     if ok:
+        try:
+            from database import loans as loans_db
+            from services import leaderboard as lb_service
+
+            fresh_user = await users_db.get_user(target_user_id)
+            fresh_net = await lb_service.net_worth(fresh_user) if fresh_user else None
+            expected_net = reset_wallet - await loans_db.get_outstanding(target_user_id)
+            verified = fresh_net == expected_net
+            if not verified:
+                logger.error(
+                    "Post-clear verification FAILED user=%s dump=%s fresh_net=%s expected=%s",
+                    target_user_id, recovery_id, fresh_net, expected_net,
+                )
+        except Exception:
+            logger.exception(
+                "Post-clear verification failed user=%s dump=%s",
+                target_user_id, recovery_id,
+            )
+
+    if ok:
+        if verified:
+            check = "Verified against fresh database state."
+        elif verified is None:
+            check = "Post-clear verification could not run — see logs."
+        else:
+            check = "WARNING: post-clear verification mismatch — see logs."
         return (
             True,
             f"User <code>{target_user_id}</code> cleared.\n"
             f"Recovery ID: <code>{recovery_id}</code> (use <code>/recover {recovery_id}</code> to restore).\n"
-            f"Wallet reset to {reset_wallet}.",
+            f"Wallet reset to {reset_wallet}; bank and holdings reset to 0.\n"
+            f"{check}",
             recovery_id,
         )
     return False, f"User <code>{target_user_id}</code> not found.", None
