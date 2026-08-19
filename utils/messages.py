@@ -78,7 +78,7 @@ def help_text() -> str:
         f"<code>/withdraw amount</code> — bank → wallet (tax applies)\n"
         f"<code>/bank</code> — bank info & interest\n\n"
         f"<b>💰 Loans</b>\n"
-        f"<code>/loan DAYS AMOUNT</code> — borrow money\n"
+        f"<code>/loan AMOUNT DAYS</code> — borrow money\n"
         f"<code>/loanpay [amount]</code> — repay a loan\n"
         f"<code>/loaninfo</code> — loan rules & rates\n\n"
         f"<b>📈 Stock Market</b>\n"

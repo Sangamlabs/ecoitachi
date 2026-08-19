@@ -105,37 +105,38 @@ def register(app: Client) -> None:
     @app.on_message(filters.text & ~filters.channel & ~filters.bot & ~filters.service)
     async def on_promo_text(client: Client, message: Message):
         if message.from_user is None:
-            return
+            message.continue_propagation()
         if message.from_user.id == config.BOT_ID:
-            return
+            message.continue_propagation()
         if getattr(message, "forward_from", None) or getattr(
             message, "forward_from_chat", None
         ):
-            return
+            message.continue_propagation()
         text = (message.text or "").strip()
         if not text or text.startswith("/"):
-            return
+            message.continue_propagation()
         if len(text) > MAX_SCAN_LENGTH:
-            return
+            message.continue_propagation()
 
         tokens = TOKEN_RE.findall(text.upper())
         if not tokens:
-            return
+            message.continue_propagation()
 
         try:
             candidates = await promo_service.cache.candidates(tokens)
         except Exception:
             logger.exception("promo cache lookup failed")
-            return
+            message.continue_propagation()
         if not candidates:
-            return
+            message.continue_propagation()
 
         allowed, _reason = await check_gate(message, feature="economy")
         if not allowed:
-            return
+            message.continue_propagation()
 
         await identity_service.ensure_user_from_telegram(message.from_user)
 
         for code in candidates:
             if await _redeem_once(client, message, code):
                 return
+        message.continue_propagation()

@@ -110,7 +110,7 @@ BANK
 
 LOANS
 --------------------------------------------------------------------------------
-/loan DAYS AMOUNT
+/loan AMOUNT DAYS
     Borrow money from the bank. The amount is credited to your WALLET
     immediately (borrowed money is a liability, not counted as earned
     income). One active loan per user at a time.
@@ -118,7 +118,7 @@ LOANS
         duration  : 1 to 7 days            (default)
         principal : up to ₹1,000           (default max principal)
         interest  : 1% per OVERDUE day     (default overdue interest)
-    Example: /loan 7 50000   (₹500 for 7 days)
+    Example: /loan 50000 5   (₹50,000 for 5 days)
 
 /loaninfo
     Your active loan status: loan id, principal, outstanding, overdue

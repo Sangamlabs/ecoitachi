@@ -26,19 +26,22 @@ def register(app: Client) -> None:
     @app.on_message(filters.command("loan") & NOT_CHANNEL)
     @safe_handler(feature="economy")
     async def cmd_loan(client: Client, message: Message):
-        """/loan DAYS AMOUNT — borrow money (example: /loan 7 50000)."""
+        """/loan AMOUNT DAYS — borrow money (example: /loan 50000 5)."""
         args = message.command[1:]
         if len(args) != 2:
             await reply_html(
                 client, message,
-                msgs.error("Usage: <code>/loan days amount</code>\nExample: <code>/loan 7 50000</code>"),
+                msgs.error("Usage: <code>/loan amount days</code>\nExample: <code>/loan 50000 5</code>"),
             )
             return
+        amount, err = parse_amount_or_error(args[0])
+        if err:
+            await reply_html(client, message, msgs.error(f"Usage: <code>/loan amount days</code>. {err}"))
+            return
         try:
-            duration_days = int(args[0])
-            amount = int(args[1])
+            duration_days = int(args[1])
         except ValueError:
-            await reply_html(client, message, msgs.error("Days and amount must be integers."))
+            await reply_html(client, message, msgs.error("Days must be an integer."))
             return
         ok, msg = await loans_service.issue_loan(
             user_id=message.from_user.id,

@@ -24,7 +24,7 @@ Bank
   /withdraw amount      bank -> wallet (tax applies)
 
 Loans
-  /loan DAYS AMOUNT     borrow money
+  /loan AMOUNT DAYS     borrow money
   /loaninfo             loan status & rules
   /loanpay AMOUNT|all   repay a loan
 

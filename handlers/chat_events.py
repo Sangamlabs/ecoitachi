@@ -45,7 +45,8 @@ def register(app: Client) -> None:
     @app.on_message(filters.group & ~filters.bot)
     async def on_group_message(client: Client, message: Message):
         if message.chat is None:
-            return
+            message.continue_propagation()
         if message.from_user and getattr(message.from_user, "is_bot", False):
-            return
+            message.continue_propagation()
         await _register(message.chat.id)
+        message.continue_propagation()
