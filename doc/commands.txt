@@ -158,7 +158,7 @@ Users
   /unban @user                     unban a user
   /leaderban @user                 hide a user from all leaderboards
   /leaderunban @user               restore a user on the leaderboards
-  /clearlb AMOUNT USER_COUNT       remove AMOUNT from each of the top USER_COUNT users
+  /clearlb AMOUNT USER_COUNT       set the wallet of the top USER_COUNT users to exactly AMOUNT
   /userinfo @user                  user details
   /setchat [chat_id] [setting] [on|off]    group config
 

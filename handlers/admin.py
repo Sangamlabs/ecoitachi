@@ -871,22 +871,29 @@ def register(app: Client) -> None:
         await users_db.set_user_flags(target, leaderboard_excluded=False)
         await reply_html(client, message, msgs.success(f"<code>{target}</code> is visible on the leaderboards again."))
 
-    # ---------------- /clearlb - deduct from top leaderboard users ----------------
+    # ---------------- /clearlb - reset top leaderboard users' wallet ----------------
     @app.on_message(filters.command("clearlb") & NOT_CHANNEL)
     @sudo_only
     @safe_handler(feature="admin")
     async def cmd_clearlb(client: Client, message: Message):
-        """Remove AMOUNT from each of the top USER_COUNT leaderboard users."""
+        """Set each of the top USER_COUNT leaderboard users' wallet to exactly AMOUNT."""
         args = message.command[1:]
         if len(args) < 2:
             await reply_html(
                 client, message,
-                msgs.error("Usage: <code>/clearlb AMOUNT USER_COUNT</code>"),
+                msgs.error("Usage: <code>/clearlb AMOUNT USER_COUNT</code> — sets the wallet of "
+                           "each top USER_COUNT leaderboard user to exactly AMOUNT."),
             )
             return
-        amount, err = parse_amount_or_error(args[0])
-        if err:
-            await reply_html(client, message, msgs.error(err))
+        try:
+            from utils.money import parse_amount, MoneyError
+
+            amount = parse_amount(args[0])
+        except (MoneyError, ValueError):
+            await reply_html(client, message, msgs.error("Invalid AMOUNT."))
+            return
+        if amount < 0:
+            await reply_html(client, message, msgs.error("AMOUNT cannot be negative."))
             return
         try:
             user_count = int(args[1])

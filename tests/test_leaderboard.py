@@ -155,63 +155,91 @@ def _async_lambda(value):
     return _f
 
 
-def test_apply_clearlb_deducts_and_audits(monkeypatch):
+def test_apply_clearlb_sets_wallet_to_target(monkeypatch):
+    """AMOUNT is the FINAL balance: /clearlb 100 2 sets both wallets to 100."""
     _install_db(monkeypatch, {"users": _USERS})
 
-    monkeypatch.setattr(leaderboard, "top_net_worth", _async_lambda(_USERS[:2]))
-    removed = []
+    users = {u["user_id"]: dict(u) for u in _USERS}
+    monkeypatch.setattr(leaderboard, "top_net_worth", _async_lambda([dict(_USERS[0]), dict(_USERS[1])]))
+    set_calls = []
     recorded = []
 
     async def fake_get_balance(user_id):
-        return {"wallet": next(u["wallet"] for u in _USERS if u["user_id"] == user_id), "bank": 0}
+        return {"wallet": users[user_id]["wallet"], "bank": users[user_id].get("bank", 0)}
 
-    async def fake_admin_remove(user_id, amount, actor_id):
-        removed.append((user_id, amount, actor_id))
+    async def fake_set_user_balance(user_id, field, value):
+        assert field == "wallet"
+        set_calls.append((user_id, value))
+        users[user_id]["wallet"] = value
 
     async def fake_record(**kwargs):
         recorded.append(kwargs)
         return f"tx-{kwargs['user_id']}"
 
     monkeypatch.setattr(economy, "get_balance", fake_get_balance)
-    monkeypatch.setattr(economy, "admin_remove", fake_admin_remove)
+    monkeypatch.setattr(economy, "set_user_balance", fake_set_user_balance)
     monkeypatch.setattr(tx_service, "record", fake_record)
 
     old_owner = config.OWNER_ID
     config.OWNER_ID = 2  # treat user 2 as the owner to test the skip
     try:
-        result = asyncio.run(leaderboard.apply_clearlb(amount=500, user_count=2, actor_id=99))
+        result = asyncio.run(leaderboard.apply_clearlb(amount=100, user_count=2, actor_id=99))
     finally:
         config.OWNER_ID = old_owner
 
-    assert [r[0] for r in removed] == [1]
+    assert set_calls == [(1, 100)]  # user 2 (owner) skipped
     assert result["skipped"][0]["reason"] == "owner"
     assert len(recorded) == 1
-    assert recorded[0]["ttype"] == "ADMIN_REMOVE"
+    assert recorded[0]["ttype"] == "ADMIN_REMOVE"  # wallet went 1000 -> 100
+    assert recorded[0]["balance_before"] == 1000
+    assert recorded[0]["balance_after"] == 100
     assert recorded[0]["metadata"]["reason"] == "clearlb"
+    assert recorded[0]["metadata"]["reset"] is True
 
 
-def test_apply_clearlb_skips_insufficient(monkeypatch):
+def test_apply_clearlb_uses_give_type_when_raising_wallet(monkeypatch):
     _install_db(monkeypatch, {"users": _USERS})
-    monkeypatch.setattr(leaderboard, "top_net_worth", _async_lambda(_USERS[:1]))
+    users = {u["user_id"]: dict(u) for u in _USERS}
+    monkeypatch.setattr(leaderboard, "top_net_worth", _async_lambda([dict(_USERS[0])]))
+    recorded = []
 
     async def fake_get_balance(user_id):
-        return {"wallet": 100, "bank": 0}
+        return {"wallet": users[user_id]["wallet"], "bank": 0}
 
-    async def fake_admin_remove(user_id, amount, actor_id):
-        raise economy.InsufficientBalance(amount, 100)
+    async def fake_set_user_balance(user_id, field, value):
+        users[user_id]["wallet"] = value
+
+    async def fake_record(**kwargs):
+        recorded.append(kwargs)
+        return "tx-1"
 
     monkeypatch.setattr(economy, "get_balance", fake_get_balance)
-    monkeypatch.setattr(economy, "admin_remove", fake_admin_remove)
+    monkeypatch.setattr(economy, "set_user_balance", fake_set_user_balance)
+    monkeypatch.setattr(tx_service, "record", fake_record)
+
+    result = asyncio.run(leaderboard.apply_clearlb(amount=5000, user_count=1, actor_id=99))
+    assert recorded[0]["ttype"] == "ADMIN_GIVE"
+    assert recorded[0]["amount"] == 4000
+    assert result["done"][0]["after"] == 5000
+
+
+def test_apply_clearlb_skips_users_already_at_target(monkeypatch):
+    _install_db(monkeypatch, {"users": _USERS})
+    monkeypatch.setattr(leaderboard, "top_net_worth", _async_lambda([_USERS[1]]))  # wallet 2000
+    monkeypatch.setattr(economy, "get_balance", _async_lambda({"wallet": 2000, "bank": 0}))
+    monkeypatch.setattr(economy, "set_user_balance", _async_lambda(None))
     monkeypatch.setattr(tx_service, "record", _async_lambda("never"))
 
-    result = asyncio.run(leaderboard.apply_clearlb(amount=500, user_count=1, actor_id=99))
+    result = asyncio.run(leaderboard.apply_clearlb(amount=2000, user_count=1, actor_id=99))
     assert result["done"] == []
-    assert result["skipped"][0]["reason"].startswith("Insufficient balance")
+    assert result["skipped"][0]["reason"] == "already_at_target"
 
 
 def test_apply_clearlb_rejects_bad_input(monkeypatch):
     _install_db(monkeypatch, {"users": _USERS})
+    monkeypatch.setattr(economy, "get_balance", _async_lambda({"wallet": 0, "bank": 0}))
+    monkeypatch.setattr(economy, "set_user_balance", _async_lambda(None))
     with pytest.raises(ValueError):
-        asyncio.run(leaderboard.apply_clearlb(amount=0, user_count=1, actor_id=1))
+        asyncio.run(leaderboard.apply_clearlb(amount=-1, user_count=1, actor_id=1))
     with pytest.raises(ValueError):
         asyncio.run(leaderboard.apply_clearlb(amount=100, user_count=0, actor_id=1))

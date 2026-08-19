@@ -814,12 +814,17 @@ USERS (admin)
     Example: /leaderunban @sangam
 
 /clearlb AMOUNT USER_COUNT
-    Remove AMOUNT from the wallet of each of the top USER_COUNT net-worth
-    users (fresh read, exclusions honored). Each deduction is atomic and
-    guarded — a user whose wallet cannot cover AMOUNT is skipped, never made
-    negative — and every deduction logs an ADMIN_REMOVE transaction with
-    reason "clearlb". USER_COUNT must be 1-20. The owner is always skipped.
-    Example: /clearlb 50000 10
+    Set the wallet of each of the top USER_COUNT net-worth users (fresh read,
+    exclusions honored) to EXACTLY AMOUNT — it is the FINAL balance, not a
+    subtraction. Example: /clearlb 100 4 sets the wallet of the Top 4 users to
+    exactly ₹100 each (regardless of how much they had before).
+    Every reset runs through the atomic economy engine (bank, stocks and
+    assets are untouched) and writes an audit transaction with
+    balance_before and balance_after (ADMIN_REMOVE when reduced,
+    ADMIN_GIVE when raised). Users already at AMOUNT are skipped; the owner is
+    always skipped. USER_COUNT must be 1-20. AMOUNT 0 is allowed (the engine
+    supports a zero-balance reset).
+    Example: /clearlb 100 10
 
 /userinfo @user
     Full account report: wallet, bank, net worth, total earned/spent,

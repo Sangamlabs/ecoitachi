@@ -109,20 +109,31 @@ def name_of(user: dict[str, Any]) -> str:
 
 
 async def apply_clearlb(amount: int, user_count: int, actor_id: int) -> dict[str, Any]:
-    """Deduct ``amount`` from each of the top ``user_count`` eligible users.
+    """Reset the wallet of each of the top ``user_count`` users to ``amount``.
 
-    Used by the ``/clearlb`` admin command.  Reads the leaderboard fresh,
-    skips the owner, and per user runs an atomic guarded ``economy.admin_remove``
-    plus an ``ADMIN_REMOVE`` audit transaction.  Users that cannot cover
-    ``amount`` are skipped — a wallet is never made negative.
+    Used by the ``/clearlb`` admin command.  ``amount`` is the FINAL wallet
+    balance, not a subtraction.  The leaderboard is read fresh and honors the
+    ``/leaderban`` exclusions; the owner is always skipped.  Every wallet
+    change goes through the existing atomic economy engine
+    (:func:`economy.set_user_balance`) so bank/stocks/assets are untouched,
+    balances can never go negative, and no second balance source exists.
+
+    Every reset writes an audit transaction carrying ``balance_before`` and
+    ``balance_after`` (``ADMIN_REMOVE`` when the wallet was reduced,
+    ``ADMIN_GIVE`` when it was raised).  Users already at the target balance
+    are skipped.  The database is re-read after each change to verify the
+    resulting balance.
+
+    ``amount`` must be >= 0 (0 is supported by the economy engine's
+    zero-balance reset); ``user_count`` must be >= 1.
 
     Returns ``{"amount", "done": [...], "skipped": [...]}``.
     """
     from config import config
     from services import economy, transaction as tx_service
 
-    if amount <= 0:
-        raise ValueError("amount must be positive")
+    if amount < 0:
+        raise ValueError("amount must be >= 0")
     if user_count < 1:
         raise ValueError("user_count must be at least 1")
 
@@ -136,16 +147,27 @@ async def apply_clearlb(amount: int, user_count: int, actor_id: int) -> dict[str
             continue
         try:
             before = await economy.get_balance(user_id)
-            await economy.admin_remove(user_id, amount, actor_id)
+            before_wallet = before["wallet"]
+            if before_wallet == amount:
+                skipped.append({"user_id": user_id, "reason": "already_at_target"})
+                continue
+            await economy.set_user_balance(user_id, "wallet", amount)
+            # Fresh-read to verify the atomic update really landed.
+            after = await economy.get_balance(user_id)
+            after_wallet = after["wallet"]
+            delta = after_wallet - before_wallet
+            ttype = tx_service.ADMIN_GIVE if delta > 0 else tx_service.ADMIN_REMOVE
             tx_id = await tx_service.record(
                 user_id=user_id,
-                ttype=tx_service.ADMIN_REMOVE,
-                amount=amount,
-                balance_before=before["wallet"],
-                balance_after=before["wallet"] - amount,
-                metadata={"actor": actor_id, "reason": "clearlb"},
+                ttype=ttype,
+                amount=abs(delta),
+                balance_before=before_wallet,
+                balance_after=after_wallet,
+                metadata={"actor": actor_id, "reason": "clearlb", "reset": True},
             )
-            done.append({"user_id": user_id, "tx_id": tx_id})
+            done.append(
+                {"user_id": user_id, "tx_id": tx_id, "before": before_wallet, "after": after_wallet}
+            )
         except economy.EconomyError as exc:
             skipped.append({"user_id": user_id, "reason": str(exc)})
 

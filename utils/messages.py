@@ -503,7 +503,7 @@ def admin_help() -> str:
         f"<code>/freeze @user</code> / <code>/unfreeze @user</code>\n"
         f"<code>/ban @user</code> / <code>/unban @user</code>\n"
         f"<code>/leaderban @user</code> / <code>/leaderunban @user</code> — hide/show a user on leaderboards\n"
-        f"<code>/clearlb AMOUNT USER_COUNT</code> — remove AMOUNT from each of the top USER_COUNT users\n"
+        f"<code>/clearlb AMOUNT USER_COUNT</code> — set the wallet of the top USER_COUNT users to exactly AMOUNT\n"
         f"<code>/gban @user</code> / <code>/ungban @user</code> — global ban (owner + sudo)\n"
         f"<code>/userinfo @user</code> — user details\n"
         f"<code>/setchat [chat_id] [setting] [on|off]</code> — group config\n\n"
@@ -525,14 +525,18 @@ def admin_help() -> str:
 
 
 def clearlb_result(amount: int, done: list[dict[str, Any]], skipped: list[dict[str, Any]]) -> str:
-    """Report for the /clearlb command."""
+    """Report for the /clearlb command (wallet set to ``amount`` per user)."""
     lines = [
         f"<b>🧹 CLEAR LEADERBOARD</b>",
-        f"<blockquote>💰 Removed <b>{format_money(amount)}</b> from each of "
-        f"{len(done)} user(s).",
+        f"<blockquote>💵 Set the wallet of {len(done)} user(s) to exactly "
+        f"<b>{format_money(amount)}</b>.",
     ]
     for entry in done:
-        lines.append(f"  • User <code>{entry['user_id']}</code> — 🧾 <code>#{entry['tx_id']}</code>")
+        lines.append(
+            f"  • User <code>{entry['user_id']}</code>: "
+            f"{format_money(entry['before'])} → {format_money(entry['after'])} "
+            f"— 🧾 <code>#{entry['tx_id']}</code>"
+        )
     lines.append("</blockquote>")
     if skipped:
         lines.append("<b>Skipped:</b>")
