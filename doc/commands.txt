@@ -162,7 +162,7 @@ Users
   /userinfo @user                  user details
   /setchat [chat_id] [setting] [on|off]    group config
 
-Broadcast (reply to a message)
+Broadcast (reply to a message; entities/HTML/spoiler/URL buttons preserved)
   /bgc                             broadcast to all registered groups (auto-registered on join)
   /bdm                             broadcast to all users who started the bot via DM
 

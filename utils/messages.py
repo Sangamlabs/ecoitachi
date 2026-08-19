@@ -508,7 +508,7 @@ def admin_help() -> str:
         f"<code>/userinfo @user</code> — user details\n"
         f"<code>/setchat [chat_id] [setting] [on|off]</code> — group config\n\n"
         f"<b>📢 Broadcast (reply to a message)</b>\n"
-        f"<code>/bgc</code> — broadcast to all registered groups (auto-registered on join)\n"
+        f"<code>/bgc</code> — broadcast to all registered groups (reply to a message; formatting, media, spoiler &amp; URL buttons preserved)\n"
         f"<code>/bdm</code> — broadcast to all users who started the bot via DM\n\n"
         f"<b>🖥 Admin Panel</b>\n"
         f"<code>/adminpanel</code> — interactive inline-button admin menu\n\n"

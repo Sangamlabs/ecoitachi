@@ -885,6 +885,14 @@ BROADCAST (admin)
 /bgc
     Owner/sudo only. Reply to a message (text, photo, video, GIF, document or
     audio, formatting preserved) and send it to every registered group.
+    The replied message is serialized by the central broadcast extractor:
+    native Telegram entities (bold/italic/underline/strikethrough/spoiler/
+    code/pre/links/mentions/custom emoji/blockquote) are preserved exactly,
+    literal HTML tags (like <b>Bold</b> or <tg-spoiler>…) are rendered via
+    HTML parse mode, media spoilers (has_spoiler) are kept for photo/video/GIF,
+    and only URL inline buttons from the source message are carried over
+    (callback buttons are never replayed). Because the message is serialized
+    up front, the broadcast works even if the source message is deleted later.
     Groups are registered AUTOMATICALLY when the bot joins them or receives a
     message in them — no manual /setchat needed. Shows a confirmation with
     Confirm/Cancel buttons before sending; a large broadcast waits for inline
@@ -893,10 +901,11 @@ BROADCAST (admin)
     Example: (reply to a message) /bgc
 
 /bdm
-    Owner/sudo only. Same as /bgc but sends to every user who has STARTED the
-    bot (sent /start in a private chat) via DM. Bot accounts, banned and
-    frozen users are excluded, and the requester is skipped. Sends to a user
-    who blocked the bot are counted as "blocked", not failures.
+    Owner/sudo only. Same as /bgc (same serialized formatting, media, spoiler
+    and URL buttons) but sends to every user who has STARTED the bot (sent
+    /start in a private chat) via DM. Bot accounts, banned and frozen users
+    are excluded, and the requester is skipped. Sends to a user who blocked
+    the bot are counted as "blocked", not failures.
     Example: (reply to a message) /bdm
 
 ADMIN PANEL (admin)

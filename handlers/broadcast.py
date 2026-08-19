@@ -1,9 +1,11 @@
 """Broadcast handlers — /bgc (groups) and /bdm (DM), OWNER/SUDO only.
 
 The admin replies to an existing message (text/photo/video/GIF/document/
-audio with formatting) and issues /bgc or /bdm.  The original message is
-copied with Pyrogram's ``copy_message`` so entities and media are preserved.
-A large broadcast requires inline confirmation so nothing is sent twice.
+audio with formatting) and issues /bgc or /bdm.  The message is serialized
+into a payload by :mod:`services.message_payload` (entities, media, spoiler
+and URL buttons preserved) so the broadcast no longer depends on the source
+message surviving in the source chat.  A large broadcast requires inline
+confirmation so nothing is sent twice.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from pyrogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMa
 from database.mongo import mongo
 from handlers.common import safe_handler
 from services import broadcast as broadcast_service
+from services import message_payload
 from utils import messages as msgs
 from utils.permissions import is_sudo, sudo_only
 from utils.sender import answer_callback, edit_html, reply_html
@@ -61,6 +64,19 @@ async def _prepare_broadcast(
     source_chat_id = reply.chat.id
     source_message_id = reply.id
 
+    payload = message_payload.extract_message(reply)
+    if payload is None:
+        await reply_html(
+            client, message,
+            msgs.error(
+                "Unsupported message type for broadcast. Supported: "
+                "<b>text</b>, <b>photo</b>, <b>video</b>, <b>GIF</b>, "
+                "<b>document</b>, <b>sticker</b>, <b>voice</b>, "
+                "<b>video note</b>, <b>audio</b>."
+            ),
+        )
+        return
+
     if broadcast_type == broadcast_service.TYPE_DM:
         targets = await broadcast_service.get_target_users()
     else:
@@ -77,6 +93,7 @@ async def _prepare_broadcast(
         source_chat_id=source_chat_id,
         source_message_id=source_message_id,
         total_targets=len(targets),
+        payload=payload,
     )
 
     await reply_html(
