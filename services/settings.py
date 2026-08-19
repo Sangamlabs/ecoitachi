@@ -60,6 +60,7 @@ DEFAULTS: dict[str, Any] = {
         "mines": 0.0,
         "fly": 0.0,
         "bet": 0.0,
+        "colour": 0.0,
         "emoji": 0.0,
         "blackjack": 0.0,
     },
@@ -413,6 +414,15 @@ GAME_DEFAULTS: dict[str, dict[str, Any]] = {
         "minimum_bet": 100,
         "maximum_bet": 100_000,
         "cooldown": 60,
+    },
+    "colour": {
+        "minimum_bet": 100,
+        "maximum_bet": 200_000,
+        "cooldown": 60,
+        "duration": 15,
+        "match_multipliers": [0.0, 1.5, 4.0, 8.0],
+        "max_multiplier": 8.0,
+        "max_payout": 100_000_000,
     },
     "rob": {
         "success_probability": 0.5,

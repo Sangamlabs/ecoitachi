@@ -28,7 +28,7 @@ from utils.money import MoneyError
 
 logger = logging.getLogger(__name__)
 
-GAMES = ("fly", "mines", "bet")
+GAMES = ("fly", "mines", "bet", "colour")
 
 
 class GameError(Exception):

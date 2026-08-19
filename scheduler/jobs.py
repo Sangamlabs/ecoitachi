@@ -48,10 +48,11 @@ async def _run_asset_tick() -> None:
 async def _run_game_cleanup() -> None:
     from services import game_engine
 
-    try:
-        await game_engine.expire_stale_games("mines")
-    except Exception:
-        logger.exception("game cleanup job failed")
+    for game in ("mines", "colour"):
+        try:
+            await game_engine.expire_stale_games(game)
+        except Exception:
+            logger.exception("game cleanup job failed for %s", game)
 
 
 async def _run_emoji_expiry() -> None:
