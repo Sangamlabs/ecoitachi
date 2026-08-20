@@ -296,6 +296,21 @@ game. A failed bet only loses the bet; no money is ever duplicated.
     Only the player who started the game can use its buttons.
     Example: /colour 1000
 
+/aviator amount
+    Aviator crash game. Your bet is locked and a single game message with a
+    💰 CASH OUT button is sent. The multiplier climbs a slow curve (~2s
+    between updates, ~60s max round); press CASH OUT before the plane crashes
+    to win bet x multiplier (profit = payout - bet). If the plane crashes
+    first the bet is lost. The crash moment is random and independent of the
+    player. Sessions that are never resolved expire after 60s (default) and
+    are settled as a loss. The game message is edited in place (never spammed)
+    and edits are UI-only — a failed edit or FloodWait never changes the
+    settlement. Amounts use the global parser (1000 / 10k / 1m / 1 lakh / 1
+    crore). By default max_bet and max_payout are unlimited (you may bet your
+    whole wallet and every generated payout is paid out); both are adjustable
+    via /aviatorset. Only the player who started the game can use the button.
+    Example: /aviator 1000
+
 EMOJI GAMES (Telegram animated dice)
 --------------------------------------------------------------------------------
 Solo rounds use Telegram's real animated dice — the bot sends the emoji, waits
@@ -682,6 +697,19 @@ GAMES — COLOUR (admin)
         max_payout     : > 0 cap on any single payout in sub-units
                          (default 100,000,000 = ₹1,000,000)
     Example: /colourset multipliers 0 1.2 3 7
+
+/aviatorset field value
+    Configure /aviator. One field at a time:
+        min_bet        : >= 1 (default ₹1)
+        max_bet        : >= 0 (default 0 = UNLIMITED — bet your whole wallet)
+        cooldown       : seconds >= 0 (default 60)
+        duration       : seconds >= 2 (default 60; the plane always crashes
+                         within duration, orphaned sessions auto-expire)
+        max_multiplier : 1-1000 ceiling of the multiplier curve (default 100)
+        max_payout     : >= 0 (default 0 = UNLIMITED — every generated payout
+                         is paid out; set > 0 to cap a single payout in
+                         sub-units, e.g. 100,000,000 = ₹1,000,000)
+    Example: /aviatorset max_bet 0
 
 GAMES — ROB (crime tuning, admin)
 --------------------------------------------------------------------------------

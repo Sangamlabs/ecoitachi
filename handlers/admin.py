@@ -652,6 +652,67 @@ def register(app: Client) -> None:
         await settings_service.update_game_settings("colour", **changes)
         await reply_html(client, message, msgs.success("Colour game settings updated."))
 
+    # ---------------- AVIATOR GAME ----------------
+    @app.on_message(filters.command("aviatorset") & NOT_CHANNEL)
+    @sudo_only
+    @safe_handler
+    async def cmd_aviatorset(client: Client, message: Message):
+        await ensure_user(client, message)
+        args = message.command[1:]
+        if len(args) < 2:
+            await reply_html(
+                client, message,
+                msgs.error(
+                    "Usage: <code>/aviatorset field value</code>\n"
+                    "Fields: min_bet | max_bet (0=unlimited) | cooldown | "
+                    "duration | max_multiplier | max_payout (0=unlimited)\n"
+                    "By default max_bet and max_payout are 0 (unlimited)."
+                ),
+            )
+            return
+        field = args[0].lower()
+        current = await settings_service.get_game_settings("aviator")
+        next_settings = dict(current)
+        try:
+            if field in ("min_bet", "max_bet", "cooldown", "duration", "max_payout"):
+                value = int(float(args[1]))
+                key = (
+                    "minimum_bet" if field == "min_bet"
+                    else ("maximum_bet" if field == "max_bet" else field)
+                )
+                if field == "min_bet" and value < 1:
+                    await reply_html(client, message, msgs.error("min_bet must be at least 1."))
+                    return
+                if field == "duration" and value < 2:
+                    await reply_html(client, message, msgs.error("duration must be at least 2 seconds."))
+                    return
+                if value < 0:
+                    await reply_html(client, message, msgs.error("Value must be >= 0 (0 = unlimited for max_bet / max_payout)."))
+                    return
+                next_settings[key] = value
+            elif field == "max_multiplier":
+                multiplier = float(args[1])
+                if not is_safe_multiplier(multiplier) or multiplier < 1.0:
+                    await reply_html(client, message, msgs.error("Multiplier must be between 1 and 1000."))
+                    return
+                next_settings["max_multiplier"] = multiplier
+            else:
+                await reply_html(client, message, msgs.error("Unknown field. See /aviatorset usage."))
+                return
+        except ValueError:
+            await reply_html(client, message, msgs.error("Invalid numeric value."))
+            return
+        max_bet = int(next_settings.get("maximum_bet", 0))
+        if max_bet > 0 and int(next_settings.get("minimum_bet", 0)) > max_bet:
+            await reply_html(client, message, msgs.error("Minimum bet cannot exceed maximum bet."))
+            return
+        changes = {k: v for k, v in next_settings.items() if current.get(k) != v}
+        if not changes:
+            await reply_html(client, message, msgs.success("Aviator game settings unchanged."))
+            return
+        await settings_service.update_game_settings("aviator", **changes)
+        await reply_html(client, message, msgs.success("Aviator game settings updated."))
+
     # ---------------- MINES GAME ----------------
     @app.on_message(filters.command("minestrap") & NOT_CHANNEL)
     @sudo_only

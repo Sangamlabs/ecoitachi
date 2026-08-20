@@ -91,6 +91,7 @@ CATEGORIES: dict[str, tuple[str, list[str]]] = {
             "<code>/betset win_prob multiplier min_bet max_bet [cooldown]</code>",
             "<code>/minestrap ...</code> — mines tuning",
             "<code>/colourset field value</code> — colour tuning",
+            "<code>/aviatorset field value</code> — aviator tuning",
             "<code>/robset field value</code> — rob tuning",
             "<code>/emojiset GAME field value</code>",
             "<code>/emojitrap GAME key=value ...</code>",

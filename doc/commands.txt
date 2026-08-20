@@ -67,6 +67,7 @@ Games
   /mines amount                 6x6 mines board (inline buttons)
   /bet amount                   coin bet
   /colour amount                pick size, colour & number
+  /aviator amount               cash out before the plane crashes
   /blackjack amount             play the dealer
   /rob @user                    steal from a user's bank
 
@@ -80,7 +81,7 @@ Promo Codes
                                 detects and redeems it automatically
   /redeem CODE                  redeem a code explicitly (same engine)
 
-ADMIN COMMANDS (owner + sudo, 64)
+ADMIN COMMANDS (owner + sudo, 65)
 =================================
 Economy
   /give @user amount            give money
@@ -139,6 +140,7 @@ Games
   /betset win_prob multiplier min_bet max_bet [cooldown]
   /minestrap ...                         mines tuning
   /colourset field value                 colour tuning
+  /aviatorset field value                aviator tuning
   /robset field value                    rob tuning
 
 Emoji Games

@@ -61,6 +61,7 @@ DEFAULTS: dict[str, Any] = {
         "fly": 0.0,
         "bet": 0.0,
         "colour": 0.0,
+        "aviator": 0.0,
         "emoji": 0.0,
         "blackjack": 0.0,
     },
@@ -423,6 +424,17 @@ GAME_DEFAULTS: dict[str, dict[str, Any]] = {
         "match_multipliers": [0.0, 1.5, 4.0, 8.0],
         "max_multiplier": 8.0,
         "max_payout": 100_000_000,
+    },
+    "aviator": {
+        # 0 = unlimited: players may bet their whole wallet and every
+        # generated payout is paid out. Admins can cap both via /aviatorset.
+        "minimum_bet": 100,
+        "maximum_bet": 0,
+        "cooldown": 60,
+        "duration": 60,
+        "max_multiplier": 100.0,
+        "max_payout": 0,
+        "growth_exponent": 4.0,
     },
     "rob": {
         "success_probability": 0.5,

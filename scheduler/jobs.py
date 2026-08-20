@@ -48,7 +48,7 @@ async def _run_asset_tick() -> None:
 async def _run_game_cleanup() -> None:
     from services import game_engine
 
-    for game in ("mines", "colour"):
+    for game in ("mines", "colour", "aviator"):
         try:
             await game_engine.expire_stale_games(game)
         except Exception:

@@ -30,6 +30,7 @@ COMMAND_REGISTRY = [
     "handlers.income",
     "handlers.games",
     "handlers.colour",
+    "handlers.aviator",
     "handlers.emoji_games",
     "handlers.blackjack",
     "handlers.emoji_admin",
