@@ -127,6 +127,7 @@ CATEGORIES: dict[str, tuple[str, list[str]]] = {
             "<code>/restorecase CASE-ID</code> (owner)",
             "<code>/securityset</code> — security config (owner)",
             "<code>/addsudo @user</code> / <code>/rsudo @user</code> — sudo (owner)",
+            "<code>/admincmds</code> — OWNER-only command permission panel",
             "<code>/restart</code> — restart the bot",
         ],
     ),

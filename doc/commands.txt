@@ -81,7 +81,7 @@ Promo Codes
                                 detects and redeems it automatically
   /redeem CODE                  redeem a code explicitly (same engine)
 
-ADMIN COMMANDS (owner + sudo, 65)
+ADMIN COMMANDS (owner + sudo, 70)
 =================================
 Economy
   /give @user amount            give money
@@ -170,6 +170,7 @@ Broadcast (reply to a message; entities/HTML/spoiler/URL buttons preserved)
 
 Admin Panel
   /adminpanel                      interactive inline-button admin menu
+  /admincmds                      OWNER-only command permission panel (discovered from registry)
 
 System
   /adminhelp                       this help
@@ -184,8 +185,9 @@ OWNER + SUDO COMMANDS (5)
   /gban @user                      global ban (optional reason)
   /ungban @user                    remove global ban
 
-OWNER ONLY COMMANDS (7)
+OWNER ONLY COMMANDS (8)
 =======================
+  /admincmds                       command permission control panel
   /addsudo @user                   add sudo admin
   /rsudo @user                     remove sudo admin
   /clear USER                      backup + reset economy, returns recovery ID

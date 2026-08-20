@@ -7,6 +7,7 @@ hardcode configurable numbers.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from database.mongo import mongo
@@ -288,6 +289,56 @@ async def update_game_settings(game: str, **changes: Any) -> dict[str, Any]:
         upsert=True,
     )
     return await get_game_settings(game)
+
+
+COMMAND_PERM_PREFIX = "cmdperm:"
+
+
+async def get_command_permission(command: str) -> str | None:
+    """Return the stored permission mode for a command (``owner``/``admin``) or None.
+
+    Stored overrides the decorator default; absence means the default applies.
+    """
+    command = command.strip().lower()
+    if not command:
+        return None
+    doc = await mongo.db[COLLECTION].find_one({"key": f"{COMMAND_PERM_PREFIX}{command}"})
+    return doc.get("mode") if doc else None
+
+
+async def get_all_command_permissions() -> list[dict[str, Any]]:
+    """List every stored command-permission record (one per command)."""
+    cursor = mongo.db[COLLECTION].find({"key": {"$regex": rf"^{COMMAND_PERM_PREFIX}"}})
+    return [
+        {
+            "command": doc.get("command"),
+            "mode": doc.get("mode"),
+            "updated_by": doc.get("updated_by"),
+            "updated_at": doc.get("updated_at"),
+        }
+        for doc in [d async for d in cursor]
+        if doc.get("command")
+    ]
+
+
+async def set_command_permission(command: str, mode: str, updated_by: int) -> dict[str, Any]:
+    """Upsert ONE permission record for a command (unique ``key`` index)."""
+    command = command.strip().lower()
+    now = int(time.time())
+    await mongo.db[COLLECTION].update_one(
+        {"key": f"{COMMAND_PERM_PREFIX}{command}"},
+        {
+            "$set": {
+                "key": f"{COMMAND_PERM_PREFIX}{command}",
+                "command": command,
+                "mode": mode,
+                "updated_by": updated_by,
+                "updated_at": now,
+            }
+        },
+        upsert=True,
+    )
+    return {"command": command, "mode": mode, "updated_by": updated_by, "updated_at": now}
 
 
 async def get_emoji_games_config() -> dict[str, dict[str, Any]]:

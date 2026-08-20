@@ -35,8 +35,8 @@ Two ranks control the bot:
 Permission split on admin commands:
   SUDO + OWNER : everything marked (owner + sudo) and every plain admin
                  command in this reference.
-  OWNER ONLY   : /addsudo /rsudo /clear /restore /recover /restorecase
-                 /securityset.
+  OWNER ONLY   : /admincmds /addsudo /rsudo /clear /restore /recover
+                 /restorecase /securityset.
 
 Permissions are ALWAYS resolved from numeric Telegram user ids, never
 usernames, so a username change cannot grant or revoke access.
@@ -950,6 +950,20 @@ ADMIN PANEL (admin)
     games, users, broadcast, system & recovery). Every button re-verifies the
     Telegram user id — callback data is never trusted for permissions.
     Example: /adminpanel
+
+/admincmds
+    OWNER only. Dynamic control panel that discovers EVERY registered admin
+    command directly from the running bot (no manual list) and shows it in
+    paginated categories with its current permission.
+    Select a command to switch its permission:
+        🔴 OWNER ONLY   (mode = owner)
+        🟢 OWNER + SUDO (mode = admin)
+    Changes apply IMMEDIATELY (no restart) and are audited as
+    ADMIN_COMMAND_PERMISSION_CHANGED. Non-delegatable commands (/admincmds,
+    /addsudo /rsudo /clear /recover /restore /restorecase /securityset) stay
+    OWNER ONLY and cannot be delegated. Only the real OWNER (OWNER_ID in .env)
+    can open the panel or press its buttons.
+    Examples: /admincmds
 
 GROUP CONFIGURATION (admin)
 --------------------------------------------------------------------------------
