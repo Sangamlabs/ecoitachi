@@ -14,6 +14,7 @@ so changes apply immediately (no restart, no cache flush beyond the one entry).
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 
@@ -39,6 +40,8 @@ CMD_CALLBACK = f"{PREFIX}cmd:"
 SET_CALLBACK = f"{PREFIX}set:"
 BACK_CALLBACK = f"{PREFIX}back"
 CLOSE_CALLBACK = f"{PREFIX}close"
+
+logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 6
 
@@ -81,6 +84,32 @@ def _category_map() -> dict[str, str]:
     return mapping
 
 
+def _iter_groups(groups):
+    """Yield ``(group_id, handler_list)`` pairs from a handler registry.
+
+    Pyrogram's ``Dispatcher.groups`` is an ``OrderedDict`` whose keys are the
+    integer priority group numbers and whose values are lists of handler
+    objects.  Iterating the container directly yields those integer keys, so
+    we always iterate the mapping's items.  Plain sequences are accepted too
+    (used by tests).  Anything else is logged and skipped — never treated as
+    a handler group.
+    """
+    if groups is None:
+        return
+    if isinstance(groups, dict):  # OrderedDict is a dict subclass
+        items = groups.items()
+    elif isinstance(groups, (list, tuple)):
+        items = enumerate(groups)
+    else:
+        logger.warning(
+            "unexpected dispatcher.groups type %s; /admincmds discovery skipped",
+            type(groups).__name__,
+        )
+        return
+    for group_id, handlers in items:
+        yield group_id, handlers
+
+
 def discover_admin_commands(client: Client) -> list[dict]:
     """Return the ACTUAL registered admin commands (command, perm, category).
 
@@ -93,12 +122,43 @@ def discover_admin_commands(client: Client) -> list[dict]:
     seen = set()
     commands = []
     cat_map = _category_map()
-    for group in getattr(client.dispatcher, "groups", []):
-        for handler in group:
-            perm = getattr(getattr(handler, "callback", None), "_admin_perm", None)
+    dispatcher = getattr(client, "dispatcher", None)
+    groups = getattr(dispatcher, "groups", None)
+    if groups is None:
+        logger.warning("no dispatcher groups found; /admincmds discovery empty")
+        _DISCOVERY_CACHE = commands
+        return commands
+    for group_id, handlers in _iter_groups(groups):
+        if handlers is None or isinstance(handlers, (str, bytes)):
+            logger.warning(
+                "dispatcher group %r holds non-list value %r; skipped",
+                group_id,
+                handlers,
+            )
+            continue
+        try:
+            handler_iter = iter(handlers)
+        except TypeError:
+            logger.warning(
+                "dispatcher group %r is not iterable (%s); skipped",
+                group_id,
+                type(handlers).__name__,
+            )
+            continue
+        for handler in handler_iter:
+            callback = getattr(handler, "callback", None)
+            perm = getattr(callback, "_admin_perm", None)
             if perm is None:
+                continue  # not an admin command handler
+            flt = getattr(handler, "filters", None)
+            if flt is None:
+                logger.warning(
+                    "admin handler %s in group %r has no filters; skipped",
+                    getattr(callback, "__name__", handler),
+                    group_id,
+                )
                 continue
-            for name in _collect_commands(getattr(handler, "filters", None)):
+            for name in _collect_commands(flt):
                 name = normalize_command_name(name)
                 if not name or name in seen:
                     continue

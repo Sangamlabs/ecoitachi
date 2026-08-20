@@ -7,9 +7,11 @@ no-duplicates upsert storage.  Runs anywhere without a local MongoDB.
 """
 
 import asyncio
+import logging
 import os
 import sys
 import time
+from collections import OrderedDict
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -130,7 +132,12 @@ def make_client():
         pass
 
     user_handler = MessageHandler(user_cb, filters.command("balance"))
-    dispatcher = SimpleNamespace(groups=[handlers + [user_handler]])
+    # Real shape of Pyrogram Dispatcher.groups: OrderedDict whose keys are the
+    # integer priority group numbers and whose values are handler lists.
+    groups = OrderedDict()
+    groups[0] = handlers + [user_handler]
+    groups[-1] = [_admin_handler("securityset", "owner")]
+    dispatcher = SimpleNamespace(groups=groups)
     return SimpleNamespace(
         me=SimpleNamespace(username="uno_reverse_god_bot"),
         dispatcher=dispatcher,
@@ -301,10 +308,71 @@ def test_discovery_finds_all_and_excludes_non_admin(client):
     commands = admincmds.discover_admin_commands(client)
     names = {c["command"] for c in commands}
     assert names == {"give", "remove", "getcoin", "addsudo",
-                     "admincmds", "setchat", "say", "restart"}
+                     "admincmds", "setchat", "say", "restart", "securityset"}
     assert "balance" not in names
     # No duplicates even when the same command appears via combined filters.
     assert len(names) == len(commands)
+
+
+def test_discovery_across_priority_groups(client):
+    # Admin commands registered in different integer priority groups are all
+    # discovered; the integer group keys are never treated as handlers.
+    by_name = {c["command"]: c for c in admincmds.discover_admin_commands(client)}
+    assert "give" in by_name      # group 0
+    assert "securityset" in by_name  # group -1
+
+
+def test_discovery_skips_malformed_group_values_without_crashing(monkeypatch):
+    # A registry entry that is an integer (or otherwise not a handler list)
+    # must be logged and skipped — never iterated, never converted to a
+    # handler — while the valid handlers are still discovered.
+    groups = OrderedDict()
+    groups[0] = [_admin_handler("give", "admin")]
+    groups[1] = 42                       # malformed: plain integer metadata
+    groups[2] = "not-a-group"            # malformed: string
+    groups[3] = None                     # malformed: None
+
+    client = SimpleNamespace(
+        me=SimpleNamespace(username="uno_reverse_god_bot"),
+        dispatcher=SimpleNamespace(groups=groups),
+    )
+    captured = []
+
+    class _Handler(logging.Handler):
+        def emit(self, record):
+            captured.append(record.getMessage())
+
+    handler = _Handler()
+    logger = logging.getLogger("handlers.admincmds")
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+    try:
+        commands = admincmds.discover_admin_commands(client)
+    finally:
+        logger.removeHandler(handler)
+
+    names = {c["command"] for c in commands}
+    assert names == {"give"}
+    assert len(captured) >= 3
+    assert any("group 1" in m and "not iterable" in m for m in captured)
+    assert any("group 2" in m and "non-list" in m for m in captured)
+    assert any("group 3" in m and "non-list" in m for m in captured)
+
+
+def test_discovery_handles_groups_of_unknown_type_without_crashing(monkeypatch):
+    # dispatcher.groups of a completely unexpected type is logged and skipped.
+    client = SimpleNamespace(
+        me=SimpleNamespace(username="uno_reverse_god_bot"),
+        dispatcher=SimpleNamespace(groups=object()),
+    )
+    commands = admincmds.discover_admin_commands(client)
+    assert commands == []
+
+
+def test_discovery_missing_dispatcher_is_empty(monkeypatch):
+    client = SimpleNamespace(me=SimpleNamespace(username="uno_reverse_god_bot"))
+    commands = admincmds.discover_admin_commands(client)
+    assert commands == []
 
 
 def test_discovery_carries_default_permissions(client):
@@ -312,6 +380,7 @@ def test_discovery_carries_default_permissions(client):
     assert by_name["give"]["perm"] == "admin"
     assert by_name["addsudo"]["perm"] == "owner"
     assert by_name["admincmds"]["perm"] == "owner"
+    assert by_name["securityset"]["perm"] == "owner"
 
 
 def test_discovery_maps_categories(client):
@@ -354,6 +423,44 @@ def test_admincmds_denied_for_non_owner(app, client, env, monkeypatch):
     asyncio.run(dispatch_message(app, client, message))
 
     assert any("not allowed" in text for text in denied)
+
+
+def test_admincmds_denied_for_sudo_but_not_owner(app, client, env, monkeypatch):
+    # A SUDO admin is NOT the owner, so /admincmds must still be denied.
+    denied = []
+
+    async def reply(client, message, text, **kwargs):
+        denied.append(text)
+
+    async def fake_is_sudo(user_id):
+        return user_id == 2
+
+    monkeypatch.setattr(perm, "is_sudo", fake_is_sudo)
+    monkeypatch.setattr("utils.permissions.reply_html", reply)
+
+    message = _msg("/admincmds", user_id=2)
+    asyncio.run(dispatch_message(app, client, message))
+
+    assert any("not allowed" in text for text in denied)
+
+
+def test_admincmds_callback_denied_for_sudo_but_not_owner(app, client, env, monkeypatch):
+    # A SUDO admin pressing a panel button must be rejected as well.
+    answered = []
+
+    async def answer(client, callback, text="", show_alert=False):
+        answered.append((text, show_alert))
+
+    async def fake_is_sudo(user_id):
+        return user_id == 2
+
+    monkeypatch.setattr(perm, "is_sudo", fake_is_sudo)
+    monkeypatch.setattr("handlers.admincmds.answer_callback", answer)
+
+    asyncio.run(dispatch_callback(app, client, _cbq("admincmds:cmd:give", user_id=2)))
+
+    assert answered and "Only the bot owner" in answered[0][0]
+    assert answered[0][1] is True
 
 
 # ---------------------------------------------------------------------------
