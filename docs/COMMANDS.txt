@@ -709,6 +709,12 @@ GAMES — COLOUR (admin)
         max_payout     : >= 0 (default 0 = UNLIMITED — every generated payout
                          is paid out; set > 0 to cap a single payout in
                          sub-units, e.g. 100,000,000 = ₹1,000,000)
+        crash_value    : upper crash limit of the crash generator (default
+                         100 = same as max_multiplier). Must be >= 1.00x and
+                         <= max_multiplier. Crash points are still rolled
+                         randomly but never exceed this value.
+                         Example: /aviatorset crash_value 5  => crashes stay
+                         between ~1.0x and 5.00x
     Example: /aviatorset max_bet 0
 
 GAMES — ROB (crime tuning, admin)

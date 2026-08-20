@@ -490,7 +490,7 @@ def admin_help() -> str:
         f"<code>/betset win_prob multiplier min_bet max_bet [cooldown]</code>\n"
         f"<code>/minestrap ...</code> — mines tuning\n"
         f"<code>/colourset field value</code> — colour tuning\n"
-        f"<code>/aviatorset field value</code> — aviator tuning\n"
+        f"<code>/aviatorset field value</code> — aviator tuning (incl. crash_value)\n"
         f"<code>/robset field value</code> — rob tuning\n\n"
         f"<b>🎳 Emoji Games</b>\n"
         f"<code>/emojiset GAME field value</code> — one field at a time\n"

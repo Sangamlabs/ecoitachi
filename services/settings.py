@@ -434,6 +434,9 @@ GAME_DEFAULTS: dict[str, dict[str, Any]] = {
         "duration": 60,
         "max_multiplier": 100.0,
         "max_payout": 0,
+        # Upper crash limit for the crash generator: crash points are rolled
+        # randomly but never exceed this value. Default = the curve ceiling.
+        "crash_value": 100.0,
         "growth_exponent": 4.0,
     },
     "rob": {

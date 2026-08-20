@@ -80,6 +80,28 @@ def is_safe_multiplier(value: float) -> bool:
     return math.isfinite(value) and 0.0 <= value <= 1000.0
 
 
+def validate_crash_value(value, max_multiplier: float = 1000.0):
+    """Validate an aviator crash_value: numeric, >=1.00x, finite, <= max_multiplier.
+
+    Returns ``(parsed_value, None)`` on success or ``(None, error_message)``.
+    NaN/Infinity, negatives and values above ``max_multiplier`` are rejected.
+    """
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None, "crash_value must be numeric."
+    if not is_safe_multiplier(value):
+        return None, "crash_value must be a finite multiplier between 1 and 1000."
+    if value < 1.0:
+        return None, "crash_value must be at least 1.00x."
+    if value > max_multiplier:
+        return None, (
+            f"crash_value cannot exceed max_multiplier ({max_multiplier:g}x). "
+            "Raise max_multiplier first."
+        )
+    return value, None
+
+
 def is_safe_percent(value: float) -> bool:
     return math.isfinite(value) and 0.0 <= value <= 100.0
 

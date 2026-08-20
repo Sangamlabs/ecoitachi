@@ -50,6 +50,7 @@ from utils.validators import (
     is_safe_probability,
     parse_amount_or_error,
     target_from_message,
+    validate_crash_value,
     validate_min_max,
 )
 
@@ -665,7 +666,8 @@ def register(app: Client) -> None:
                 msgs.error(
                     "Usage: <code>/aviatorset field value</code>\n"
                     "Fields: min_bet | max_bet (0=unlimited) | cooldown | "
-                    "duration | max_multiplier | max_payout (0=unlimited)\n"
+                    "duration | max_multiplier | max_payout (0=unlimited) | crash_value\n"
+                    "crash_value is the upper crash limit (>= 1.00x, <= max_multiplier).\n"
                     "By default max_bet and max_payout are 0 (unlimited)."
                 ),
             )
@@ -695,7 +697,25 @@ def register(app: Client) -> None:
                 if not is_safe_multiplier(multiplier) or multiplier < 1.0:
                     await reply_html(client, message, msgs.error("Multiplier must be between 1 and 1000."))
                     return
+                crash_value = float(next_settings.get("crash_value", 0.0))
+                if crash_value > 0 and multiplier < crash_value:
+                    await reply_html(
+                        client, message,
+                        msgs.error(
+                            f"max_multiplier cannot be lower than crash_value "
+                            f"({crash_value:g}x). Lower crash_value first."
+                        ),
+                    )
+                    return
                 next_settings["max_multiplier"] = multiplier
+            elif field == "crash_value":
+                crash_value, err = validate_crash_value(
+                    args[1], float(next_settings.get("max_multiplier", 100.0))
+                )
+                if err:
+                    await reply_html(client, message, msgs.error(err))
+                    return
+                next_settings["crash_value"] = crash_value
             else:
                 await reply_html(client, message, msgs.error("Unknown field. See /aviatorset usage."))
                 return

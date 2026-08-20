@@ -80,14 +80,34 @@ def multiplier_at(elapsed: float, cfg: dict[str, Any]) -> float:
     return round(multiplier, 2)
 
 
-def roll_crash_time(cfg: dict[str, Any]) -> float:
-    """Random crash moment in ``(MIN_FLY_TIME, duration]``.
+def time_at_multiplier(target: float, cfg: dict[str, Any]) -> float:
+    """Seconds at which the curve reaches ``target`` (inverse of ``multiplier_at``).
 
+    Returns 0.0 when ``target <= 1.0`` (or the curve is flat) and ``duration``
+    when ``target >= max_multiplier``.
+    """
+    duration = max(1.0, float(cfg.get("duration", 60)))
+    max_mult = max(1.0, float(cfg.get("max_multiplier", 100.0)))
+    exponent = max(1.0, float(cfg.get("growth_exponent", GROWTH_EXPONENT)))
+    target = max(1.0, min(float(target), max_mult))
+    if max_mult <= 1.0:
+        return 0.0
+    return duration * ((target - 1.0) / (max_mult - 1.0)) ** (1.0 / exponent)
+
+
+def roll_crash_time(cfg: dict[str, Any]) -> float:
+    """Random crash moment in ``(MIN_FLY_TIME, upper]``.
+
+    ``upper`` is the time the curve reaches the configured ``crash_value``
+    (the upper crash limit), so the plane can never crash above
+    ``crash_value`` while the exact crash point stays randomly generated.
     Independent of the player: takes only the game config (never user id,
     username, balance, bet, or history).
     """
     duration = max(1.0, float(cfg.get("duration", 60)))
-    return random.uniform(MIN_FLY_TIME, duration)
+    crash_value = float(cfg.get("crash_value", cfg.get("max_multiplier", 100.0)))
+    upper = max(MIN_FLY_TIME, min(duration, time_at_multiplier(crash_value, cfg)))
+    return random.uniform(MIN_FLY_TIME, upper)
 
 
 def crash_multiplier_for(crash_time: float, cfg: dict[str, Any]) -> float:
@@ -181,7 +201,13 @@ def validate_ownership(
 def _state_cfg(state: dict[str, Any]) -> dict[str, Any]:
     return dict(
         state.get("cfg")
-        or {"duration": 60, "max_multiplier": 100.0, "max_payout": 0, "growth_exponent": GROWTH_EXPONENT}
+        or {
+            "duration": 60,
+            "max_multiplier": 100.0,
+            "max_payout": 0,
+            "crash_value": 100.0,
+            "growth_exponent": GROWTH_EXPONENT,
+        }
     )
 
 
@@ -213,6 +239,7 @@ async def start(user_id: int, bet: int, *, chat_id: int | None = None) -> tuple[
             "duration": int(cfg.get("duration", 60)),
             "max_multiplier": float(cfg.get("max_multiplier", 100.0)),
             "max_payout": int(cfg.get("max_payout", 0)),
+            "crash_value": float(cfg.get("crash_value", cfg.get("max_multiplier", 100.0))),
             "growth_exponent": float(cfg.get("growth_exponent", GROWTH_EXPONENT)),
         },
     }

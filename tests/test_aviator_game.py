@@ -24,7 +24,7 @@ from services import game_engine  # noqa: E402
 from services import settings as settings_service  # noqa: E402
 from services.game_engine import GameError, NoActiveGame  # noqa: E402
 from services.settings import GAME_DEFAULTS  # noqa: E402
-from utils.validators import parse_amount_or_error  # noqa: E402
+from utils.validators import parse_amount_or_error, validate_crash_value  # noqa: E402
 
 CFG = {
     "duration": 60,
@@ -70,6 +70,79 @@ def test_crash_multiplier_derived_from_crash_time():
     assert aviator_game.crash_multiplier_for(ct, CFG) == aviator_game.multiplier_at(ct, CFG)
 
 
+def test_time_at_multiplier_is_inverse_of_curve():
+    # Round-trip: reaching ``target`` at time_at_multiplier(target) yields the
+    # target back (within the 2-decimal rounding of the display curve).
+    for target in (1.1, 1.5, 2.0, 5.0, 10.0, 50.0, 99.0):
+        t = aviator_game.time_at_multiplier(target, CFG)
+        assert aviator_game.multiplier_at(t, CFG) == pytest.approx(target, abs=0.02)
+    # Edges: <=1.0 -> 0s, >= max_multiplier -> duration.
+    assert aviator_game.time_at_multiplier(1.0, CFG) == 0.0
+    assert aviator_game.time_at_multiplier(0.5, CFG) == 0.0
+    assert aviator_game.time_at_multiplier(100.0, CFG) == 60.0
+    assert aviator_game.time_at_multiplier(500.0, CFG) == 60.0
+    # Flat curve (max_multiplier == 1) never reaches anything above 1.0x.
+    flat = dict(CFG, max_multiplier=1.0)
+    assert aviator_game.time_at_multiplier(5.0, flat) == 0.0
+    assert aviator_game.roll_crash_time(flat) == 1.0
+
+
+def test_roll_crash_time_respects_crash_value():
+    cfg5 = dict(CFG, crash_value=5.0)
+    upper5 = aviator_game.time_at_multiplier(5.0, cfg5)
+    assert 0.0 < upper5 < 60.0
+    seen = set()
+    for _ in range(500):
+        ct = aviator_game.roll_crash_time(cfg5)
+        assert aviator_game.MIN_FLY_TIME < ct <= upper5
+        assert aviator_game.crash_multiplier_for(ct, cfg5) <= 5.0
+        assert aviator_game.crash_multiplier_for(ct, cfg5) >= 1.0
+        seen.add(round(ct, 3))
+    assert len(seen) > 50  # crash points stay random, not a fixed value
+    # The configured limit itself is reachable: at the upper bound the curve
+    # is exactly crash_value.
+    assert aviator_game.multiplier_at(upper5, cfg5) == 5.0
+
+
+def test_crash_never_exceeds_configured_limit():
+    for crash_value in (2.0, 5.0, 10.0, 25.0):
+        cfg = dict(CFG, crash_value=crash_value)
+        for _ in range(300):
+            ct = aviator_game.roll_crash_time(cfg)
+            assert aviator_game.crash_multiplier_for(ct, cfg) <= crash_value
+
+
+def test_roll_crash_time_defaults_to_curve_ceiling_when_unset():
+    # Without crash_value the old behavior is preserved: crashes span the
+    # whole (MIN_FLY_TIME, duration] window, i.e. up to max_multiplier.
+    for _ in range(200):
+        ct = aviator_game.roll_crash_time(CFG)
+        assert aviator_game.MIN_FLY_TIME < ct <= 60.0
+
+
+def test_validate_crash_value():
+    value, err = validate_crash_value("5")
+    assert value == 5.0 and err is None
+    value, err = validate_crash_value("10", max_multiplier=50)
+    assert value == 10.0 and err is None
+    value, err = validate_crash_value("1", max_multiplier=1.0)
+    assert value == 1.0 and err is None
+    # NaN / Infinity rejected.
+    assert validate_crash_value("nan")[1] is not None
+    assert validate_crash_value("inf")[1] is not None
+    assert validate_crash_value("-inf")[1] is not None
+    # Negative / below 1.00x / zero rejected.
+    assert validate_crash_value("-5")[1] is not None
+    assert validate_crash_value("0")[1] is not None
+    assert validate_crash_value("0.99")[1] is not None
+    # Non-numeric rejected.
+    assert validate_crash_value("abc")[1] is not None
+    # Above max_multiplier rejected with a clear message.
+    value, err = validate_crash_value("100", max_multiplier=50)
+    assert value is None and err is not None
+    assert "max_multiplier" in err
+
+
 def test_compute_payout_unlimited_by_default():
     bet = 100_000
     payout = aviator_game.compute_payout(bet, 3.98, CFG)
@@ -112,6 +185,23 @@ def test_aviator_in_game_defaults_unlimited():
     assert cfg["maximum_bet"] == 0  # unlimited by default
     assert cfg["max_payout"] == 0  # unlimited by default
     assert cfg["duration"] == 60
+    assert cfg["crash_value"] == 100.0  # crash limit = curve ceiling by default
+
+
+def test_crash_value_persists_via_settings(monkeypatch):
+    _install_db(monkeypatch)
+    # Fresh DB read returns the default.
+    assert asyncio.run(settings_service.get_game_settings("aviator"))["crash_value"] == 100.0
+    # Persist via the existing settings system (no new collection).
+    updated = asyncio.run(settings_service.update_game_settings("aviator", crash_value=10.0))
+    assert updated["crash_value"] == 10.0
+    # A fresh read returns the persisted value (survives restart).
+    fresh = asyncio.run(settings_service.get_game_settings("aviator"))
+    assert fresh["crash_value"] == 10.0
+    assert fresh["max_multiplier"] == 100.0  # other defaults intact
+    # Overwrite to 5.0, then back — value always round-trips exactly.
+    asyncio.run(settings_service.update_game_settings("aviator", crash_value=5.0))
+    assert asyncio.run(settings_service.get_game_settings("aviator"))["crash_value"] == 5.0
 
 
 def test_aviator_registered_in_game_engine():
@@ -145,11 +235,16 @@ class _FakeCollection:
                 return doc
         return None
 
-    async def update_one(self, filt, update):
+    async def update_one(self, filt, update, upsert=False):
         for doc in self.docs.values():
             if all(doc.get(k) == v for k, v in filt.items()):
                 doc.update(update.get("$set", {}))
                 return _Result(1)
+        if upsert:
+            new_doc = dict(update.get("$set", {}))
+            new_doc.update(filt)
+            self.docs[id(new_doc)] = new_doc
+            return _Result(1)
         return _Result(0)
 
     async def insert_one(self, doc):
@@ -158,7 +253,10 @@ class _FakeCollection:
 
 class _FakeDb:
     def __init__(self):
-        self._collections = {"game_sessions": _FakeCollection()}
+        self._collections = {
+            "game_sessions": _FakeCollection(),
+            "settings": _FakeCollection(),
+        }
 
     def __getitem__(self, name):
         return self._collections[name]
@@ -326,6 +424,35 @@ def test_other_user_cannot_cashout(monkeypatch):
 
     with pytest.raises(GameError):
         asyncio.run(aviator_game.cashout("sid1", 999, None, _FakeMessage()))
+
+
+def test_cashout_with_crash_value_configured_still_works(monkeypatch):
+    db = _install_db(monkeypatch)
+    cfg5 = dict(CFG, crash_value=5.0)
+    # Crash is inside the configured limit (well before the 5.00x upper bound).
+    doc = _insert_session(
+        db,
+        _session_doc(
+            created_at=int(time.time()) - 5,
+            state={
+                "crash_time": 8.0,
+                "crash_multiplier": aviator_game.multiplier_at(8.0, cfg5),
+                "cfg": dict(cfg5),
+            },
+        ),
+    )
+    settle_calls = _install_engine(monkeypatch, db)
+    message = _FakeMessage()
+
+    result = asyncio.run(aviator_game.cashout("sid1", 7, None, message))
+
+    assert result["won"] is True and result["crashed"] is False
+    assert result["payout"] == int(doc["bet"] * result["multiplier"])
+    assert result["payout"] > doc["bet"]
+    assert settle_calls[0]["won"] is True
+    # max_payout still applies on top of crash_value.
+    cfg_payout = dict(CFG, crash_value=5.0, max_payout=150_000)
+    assert aviator_game.compute_payout(100_000, 4.99, cfg_payout) == 150_000
 
 
 # ---------------------------------------------------------------------------
