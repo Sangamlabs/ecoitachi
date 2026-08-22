@@ -44,7 +44,10 @@ COMMAND_REGISTRY = [
     "handlers.adminpanel",
     "handlers.admincmds",
     "handlers.chat_events",
-    "handlers.security"
+    "handlers.security",
+    "handlers.global_battle",
+    "handlers.ping",
+    "handlers.stats",
 ]
 
 

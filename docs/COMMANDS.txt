@@ -48,13 +48,36 @@ PART 1 — USER COMMANDS (everyone)
 --------------------------------------------------------------------------------
 
 BASICS
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 /start
     Welcome message. Registers you in the economy if new (grants the ₹500
-    welcome balance). Private chat only.
+    welcome balance).
+    In private chats (DM): shows DM start UI with START1_URL as spoiler image.
+    In groups/supergroups: shows group start UI with START2_URL as spoiler image.
+    Both use the same /start command — the bot auto-detects chat type.
 
 /help
     Shows a short summary of user commands. Private chat only.
+
+/ping
+    Shows the bot's current latency (round-trip time).
+    Displays "🏓 Pong!" with ping in milliseconds.
+    Includes image from PING_URL (Catbox) if configured.
+
+/stats
+    Shows overall EcoItachi bot statistics from the live database.
+    Statistics shown:
+        👥 Total Users
+        💬 Total Groups
+        💵 Total Wallet (circulation)
+        🏦 Total Bank (deposits)
+        🏛️ Tax Pool
+        🧾 Total Transactions
+        📈 Active Stocks
+        🏠 Active Assets
+        ⏱ Uptime
+        🏓 Ping
+    Includes image from STATS_URL (Catbox) if configured.
 
 ECONOMY
 --------------------------------------------------------------------------------
@@ -998,6 +1021,31 @@ STATS & RESTART (admin)
     Fully restart the bot and reload all modules (pm2 restart, or in-place
     re-exec when not running under pm2). You are notified when it is back
     online.
+
+ENVIRONMENT VARIABLES (for start/ping/stats images)
+-------------------------------------------------------------------------------
+START1_URL
+    Catbox image URL for the DM/private /start message.
+    Sent as a spoiler image (has_spoiler=True).
+    Optional — if not set or invalid, falls back to text-only start message.
+
+START2_URL
+    Catbox image URL for the group/supergroup /start message.
+    Sent as a spoiler image (has_spoiler=True).
+    Optional — if not set or invalid, falls back to text-only start message.
+
+PING_URL
+    Catbox image URL for the /ping command response.
+    Sent as a normal image (not spoiler).
+    Optional — if not set or invalid, sends ping text without image.
+
+STATS_URL
+    Catbox image URL for the /stats command response.
+    Sent as a normal image (not spoiler).
+    Optional — if not set or invalid, sends stats text without image.
+
+All URLs must be direct Catbox image links (e.g., https://files.catbox.moe/xxxxx.png).
+Add to .env file. Do NOT commit real URLs to version control.
 
 ================================================================================
 END OF COMMAND REFERENCE

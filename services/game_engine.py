@@ -24,11 +24,13 @@ from database import games as games_db
 from services import economy, settings as settings_service, tax as tax_service
 from services import transaction as tx_service
 from services.economy import ensure_active
+from services.global_battle import missions as missions_service
 from utils.money import MoneyError
 
 logger = logging.getLogger(__name__)
 
 GAMES = ("fly", "mines", "bet", "colour", "aviator")
+ECONOMY_GAMES = {"fly", "mines", "bet", "colour", "aviator"}
 
 
 class GameError(Exception):
@@ -179,11 +181,11 @@ async def settle_game(
     if session.get("status") != "active":
         return False
 
+    game = session.get("game", "")
     outcome = "won" if won else "lost"
     if won:
         if payout < 0:
             raise MoneyError("Invalid payout.")
-        game = session.get("game", "")
         tax = await tax_service.system_tax_amount(game, payout)
         net = payout - tax
         await economy.add_wallet(user_id, net, earn=True)
@@ -201,6 +203,11 @@ async def settle_game(
         await _record_game_tx(session, tx_service.GAME_LOSS, 0, outcome, multiplier, meta)
 
     await games_db.settle_session(session_id, outcome, payout, meta or {})
+
+    # Record mission completion for economy games
+    if game in ECONOMY_GAMES:
+        await missions_service.record_game_completion(user_id, game)
+
     return True
 
 

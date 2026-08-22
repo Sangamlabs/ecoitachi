@@ -11,6 +11,7 @@ from database import users as users_db
 from handlers.common import ensure_user, safe_handler
 from services import economy, identity as identity_service, leaderboard as leaderboard_service, rob as rob_service
 from services import tax as tax_service, transaction as tx_service
+from services.global_battle import missions as missions_service
 from utils import messages as msgs
 from utils.sender import reply_html, schedule_delete
 from utils.validators import parse_amount_or_error, parse_target_arg, target_from_message
@@ -161,6 +162,9 @@ def register(app: Client) -> None:
             await send_html(client, target_id, msgs.payment_received(sender_doc, amount))
         except Exception:
             logger.warning("could not deliver payment notice to %s", target_id)
+
+        # Record mission completion
+        await missions_service.record_command_completion(message.from_user.id, "pay")
 
     @app.on_message(filters.command("rob") & NOT_CHANNEL)
     @safe_handler(feature="economy")

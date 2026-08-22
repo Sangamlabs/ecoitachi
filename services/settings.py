@@ -161,6 +161,17 @@ DEFAULTS: dict[str, Any] = {
         "interest_rate": 1.0,
         "recovery_percent": 100,
     },
+    "global_battle": {
+        "missions_required": 3,
+        "total_missions": 10,
+        "starting_gb_coins": 0,
+        "rs_per_gb": 100,
+        "base_hp": 100,
+        "hp_per_stat": 5,
+        "melee_scaling": 1.0,
+        "ability_scaling": 1.0,
+        "durability_scaling": 1.0,
+    },
 }
 
 
@@ -530,3 +541,19 @@ async def get_secret_detection_enabled() -> bool:
 async def is_security_enabled() -> bool:
     """Return whether the full security system is active."""
     return await get_secret_detection_enabled()
+
+
+async def get_global_battle_config() -> dict[str, Any]:
+    """Return the global battle configuration merged over defaults."""
+    settings = await get_settings()
+    return dict(settings.get("global_battle", DEFAULTS["global_battle"]))
+
+
+async def update_global_battle_config(**changes: Any) -> dict[str, Any]:
+    """Overwrite one or more global battle configuration values."""
+    current = await get_global_battle_config()
+    current.update({k: v for k, v in changes.items() if k in DEFAULTS["global_battle"]})
+    await mongo.db[COLLECTION].update_one(
+        {"key": "global"}, {"$set": {"global_battle": current}}, upsert=True
+    )
+    return current

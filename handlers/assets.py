@@ -16,6 +16,7 @@ from services import asset_listings as listings_service
 from services import assets as asset_service
 from services import identity as identity_service
 from services.economy import EconomyError
+from services.global_battle import missions as missions_service
 from utils import messages as msgs
 from utils.money import format_money
 from utils.sender import answer_callback, edit_html, reply_html
@@ -45,6 +46,8 @@ def register(app: Client) -> None:
             msgs.asset_list(result["assets"])
             + f"\n<i>Page {result['page']}/{result['pages']} · <code>/assets {result['page'] + 1}</code></i>",
         )
+        # Record mission completion
+        await missions_service.record_command_completion(message.from_user.id, "assets")
 
     @app.on_message(filters.command("asset") & NOT_CHANNEL)
     @safe_handler(feature="economy")

@@ -9,6 +9,7 @@ from pyrogram.types import Message
 from handlers.common import ensure_user, safe_handler
 from services import stocks as stocks_service
 from services.economy import EconomyError
+from services.global_battle import missions as missions_service
 from utils import messages as msgs
 from utils.money import format_money
 from utils.permissions import sudo_only
@@ -42,7 +43,9 @@ def register(app: Client) -> None:
             await reply_html(client, message, msgs.error("Usage: <code>/stock SYMBOL</code>"))
             return
         asset = await stocks_service.get_asset(symbol)
-        await reply_html(client, message, msgs.stock_detail(asset))
+        await reply_html(client, message, msgs.asset_detail(asset))
+        # Record mission completion
+        await missions_service.record_command_completion(message.from_user.id, "stock")
 
     @app.on_message(filters.command("buystock") & NOT_CHANNEL)
     @safe_handler(feature="economy")
@@ -61,6 +64,8 @@ def register(app: Client) -> None:
             client, message,
             msgs.stock_trade("buy", result["symbol"], result["quantity"], result["cost"], result["tx_id"]),
         )
+        # Record mission completion
+        await missions_service.record_command_completion(message.from_user.id, "buystock")
 
     @app.on_message(filters.command("sellstock") & NOT_CHANNEL)
     @safe_handler(feature="economy")

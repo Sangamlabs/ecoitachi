@@ -55,6 +55,10 @@ class Config:
     # /getcoin mints money with no counterparty, so it gets its own tighter
     # limit on top of the shared parser ceiling.
     GETCOIN_MAX_SUBUNITS: int = int(os.getenv("GETCOIN_MAX_SUBUNITS", str(10**9)))
+    START1_URL: str = os.getenv("START1_URL", "")
+    START2_URL: str = os.getenv("START2_URL", "")
+    PING_URL: str = os.getenv("PING_URL", "")
+    STATS_URL: str = os.getenv("STATS_URL", "")
 
     def validate(self) -> None:
         """Raise a clear error if mandatory configuration is missing."""

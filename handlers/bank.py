@@ -8,6 +8,7 @@ from pyrogram.types import Message
 from database import users as users_db
 from handlers.common import ensure_user, safe_handler
 from services import bank as bank_service, transaction as tx_service
+from services.global_battle import missions as missions_service
 from utils import messages as msgs
 from utils.money import format_money
 from utils.sender import reply_html
@@ -41,6 +42,8 @@ def register(app: Client) -> None:
                 f"Wallet: {format_money(result['wallet'])} · Bank: {format_money(result['bank'])}"
             ),
         )
+        # Record mission completion
+        await missions_service.record_command_completion(message.from_user.id, "deposit")
 
     @app.on_message(filters.command("withdraw") & NOT_CHANNEL)
     @safe_handler(feature="economy")
@@ -59,6 +62,8 @@ def register(app: Client) -> None:
                 f"Received: <b>{format_money(result['received'])}</b>"
             ),
         )
+        # Record mission completion
+        await missions_service.record_command_completion(message.from_user.id, "withdraw")
 
     @app.on_message(filters.command("transactions") & NOT_CHANNEL)
     @safe_handler(feature="economy")

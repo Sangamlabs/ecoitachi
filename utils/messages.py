@@ -1236,3 +1236,40 @@ def promo_stats(stats: dict[str, Any]) -> str:
         ago = int(time.time()) - int(stats["last_redeemed_at"])
         lines.append(f"🕒 Last redemption: {format_duration(ago)} ago")
     return f"<b>📊 PROMO STATS</b>\n<blockquote>{chr(10).join(lines)}</blockquote>"
+
+
+def ping_text(ping_ms: float) -> str:
+    return (
+        f"<b>🏓 Pong!</b>\n\n"
+        f"<blockquote>⚡ Ping: <b>{ping_ms:.2f} ms</b></blockquote>"
+    )
+
+
+def stats_text(
+    users: int,
+    groups: int,
+    total_wallet: int,
+    total_bank: int,
+    tax_pool: int,
+    transactions: int,
+    active_stocks: int,
+    active_assets: int,
+    uptime_str: str,
+    ping_ms: float,
+) -> str:
+    from utils.money import format_money
+    return (
+        f"<b>📊 ECOITACHI STATISTICS</b>\n\n"
+        f"<blockquote>"
+        f"👥 Total Users: <b>{users:,}</b>\n"
+        f"💬 Total Groups: <b>{groups:,}</b>\n"
+        f"💵 Total Wallet: <b>{format_money(total_wallet)}</b>\n"
+        f"🏦 Total Bank: <b>{format_money(total_bank)}</b>\n"
+        f"🏛️ Tax Pool: <b>{format_money(tax_pool)}</b>\n"
+        f"🧾 Total Transactions: <b>{transactions:,}</b>\n"
+        f"📈 Active Stocks: <b>{active_stocks}</b>\n"
+        f"🏠 Active Assets: <b>{active_assets}</b>\n"
+        f"⏱ Uptime: <b>{uptime_str}</b>\n"
+        f"🏓 Ping: <b>{ping_ms:.2f} ms</b>"
+        f"</blockquote>"
+    )

@@ -9,6 +9,7 @@ from pyrogram.types import Message
 
 from handlers.common import ensure_user, safe_handler
 from services import rewards as rewards_service
+from services.global_battle import missions as missions_service
 from utils import messages as msgs
 from utils.sender import reply_html
 
@@ -25,6 +26,8 @@ def _claim(kind: str):
             client, message,
             msgs.reward_claimed(result["kind"], result["amount"], result["cooldown"]),
         )
+        # Record mission completion
+        await missions_service.record_command_completion(message.from_user.id, kind)
 
     return cmd_claim
 
